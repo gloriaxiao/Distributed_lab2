@@ -1,2 +1,22 @@
 #!/bin/bash
-
+PIDS=`ps aux | grep 'accepter.py' | grep -v 'grep' | awk '{print $2}'`
+if [ -z "$PIDS" ]
+	then
+		echo "No process running accepter.py"
+	else
+		kill $PIDS
+fi
+PIDS=`ps aux | grep 'leader.py' | grep -v 'grep' | awk '{print $2}'`
+if [ -z "$PIDS" ]
+	then
+		echo "No process running leader.py"
+	else
+		kill $PIDS
+fi
+PIDS=`ps aux | grep 'replica.py' | grep -v 'grep' | awk '{print $2}'`
+if [ -z "$PIDS" ]
+	then
+		echo "No process running replica.py"
+	else
+		kill $PIDS
+fi
