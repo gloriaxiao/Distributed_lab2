@@ -32,7 +32,7 @@ def len_decision_msgs():
 	decision_lock.acquire()
 	length = len(decision_msgs)
 	decision_lock.release()
-	return length  
+	return length
 
 class State: 
 	def __init__(self): 
