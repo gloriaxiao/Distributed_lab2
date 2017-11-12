@@ -13,10 +13,10 @@ SLEEP = 0.05
 BALLOT_NUM = -1
 ACCEPTED = []
 BALLOT_LOCK = Lock()
+ADDR = 'localhost'
 
 
 def init_accepter(aid, num_leaders):
-	global BALLOT_NUM
 	for i in range(self.num_leaders):
 		listener[i] = AccepterListener(pid, i, num_leaders)
 		listener[i].start()
@@ -25,22 +25,35 @@ def init_accepter(aid, num_leaders):
 		clients[i].start()
 
 
-def update_ballot_num(b, p_val=None):
+def update_ballot_num(req_type, lid, b, p_val=None):
 	global BALLOT_NUM
 	BALLOT_LOCK.acquire()
-	BALLOT_NUM = b
-	if p_val:
-		ACCEPTED.append(p_val)
+	if req_type == 'p1a':
+		if b > BALLOT_NUM:	
+			BALLOT_NUM = b
+	elif req_type == 'p2a':
+		if p_val and b >= BALLOT_NUM:
+			ACCEPTED.append(p_val)
 	BALLOT_LOCK.release()
 
 
-class pvalue:
+def state_repr():
+	global BALLOT_NUM, ACCEPTED
+	BALLOT_LOCK.acquire()
+	accept_strs = [str(v) for v in ACCEPTED]
+	output = '{:d} {}'.format(BALLOT_NUM, ' '.join(accept_strs))
+	BALLOT_LOCK.release()
+	return output
+
+
+class Pvalue:
 	def __init__(self, ballot_num, slot_num, c):
 		self.ballot = ballot_num
 		self.slot = slot_num
 		self.command = c
 
-	def 
+	def __str__(self):
+		return "{:d} {:d} {}".format(self.ballot, self.slot, self.command)
 
 # only adopt strictly increasing ballot numbers
 # add <b,s,p> to accepted if b == ballot_num
@@ -53,6 +66,7 @@ class AccepterListener:
 		Thread.__init__(self)
 		self.aid = aid
 		self.lid = lid
+		self.num_leaders = num_leaders
 		self.sock = socket(AF_INET, SOCK_STREAM)
 		self.sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 		self.port = BASEPORT + aid * num_leaders + lid 
@@ -61,6 +75,7 @@ class AccepterListener:
 		self.buffer = ''
 
 	def run(self):
+		global BALLOT_LOCK, BALLOT_NUM
 		self.conn, self.addr = self.sock.accept()
 		while True:
 			if '\n' in self.buffer:
@@ -68,14 +83,17 @@ class AccepterListener:
 				self.buffer = rest
 				msgs = l.split()
 				if msgs[0] == 'p1a':
-					num = int(msgs[1])
-					if num > self.ballot_num:
-						update_ballot_num(num)
-
-
+					num = int(msgs[1])*num_leaders + lid
+					update_ballot_num('p1a', num)
+					clients[self.lid].send('p1b ' + state_repr())
 				elif msgs[0] == 'p2a':
-					p_val = 
-
+					b_num, s_num, proposal = msgs[1:-1]
+					b_num = int(b_num)*num_leaders + lid
+					v = Pvalue(b_num, int(s_num), proposal)
+					update_ballot_num('p2a', b_num, v)
+					BALLOT_LOCK.acquire()
+					clients[self.lid].send('p2b ' + str(BALLOT_NUM))
+					BALLOT_LOCK.release()
 			else:
 				try:
 					data = self.conn.recv(1024)
@@ -97,17 +115,7 @@ class AccepterClient:
 		self.target_port = LEADER_BASEPORT + lid*num_leaders + aid
 		newbase = BASEPORT + 2*aid*num_leaders
 		self.port = newbase + num_leaders + lid
-		self.connected = False
-		while (not self.connected):
-			try:
-				new_socket = socket(AF_INET, SOCK_STREAM)
-				new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-				
-				new_socket.connect((ADDR, self.target_port))
-				self.sock = new_socket
-				self.connected = True
-			except:
-				time.sleep(SLEEP)
+		self.sock = None
 
 	def run(self):
 		pass
@@ -124,9 +132,9 @@ class AccepterClient:
 	  		try:
 	  			new_socket = socket(AF_INET, SOCK_STREAM)
 				new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+				new_socket.bind((ADDR, self.port))
 				new_socket.connect((ADDR, self.target_port))
 				self.sock = new_socket
-				alives[self.target_pid] = time.time()
 			except:
 				time.sleep(SLEEP)
 
