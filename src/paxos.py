@@ -4,32 +4,15 @@ import sys
 TIMEOUT = 0.2
 SLEEP = 0.05
 ADDR = 'localhost'
+MAXPORT = 29999
+BASEPORT = 20000
 
-alives = {} 
 self_pid = -1
-max_num_servers = -1
 
 leader_listeners = {}
-leader_senders = {} 
-accepter_listeners = {} 
-accepter_senders = {} 
+leader_clients = {}
+heartbeat_thread = None
 chatLog = []
-
-class Heartbeat(Thread): 
-	def __init__(self, index): 
-		Thread.__init__(self)
-		self.index = index
-
-	def run(self): 
-		global alives
-		while True: 
-			new_alives = {} 
-			now = time.time()
-			for key in alives: 
-				if now - alives[key] <= 0.2: 
-					new_alives[key] = alives[key]
-			alives = new_alives
-			time.sleep(0.2)
 
 class Replica(Thread):
 	def __init__(self, pid, num_servers, port):
@@ -40,24 +23,11 @@ class Replica(Thread):
 		self.port = port
 		self.buffer = ""
 		for i in range(self.num_servers):
-			if i != pid:
-				leader_listeners[i] = LeaderListener(pid, i)
-				leader_listeners[i].start()
+			leader_listeners[i] = LeaderListener(pid, i, num_servers)
+			leader_listeners[i].start()
 		for i in range(self.num_servers): 
-			if (i != pid): 
-				leader_senders[i] = LeaderSender(pid, i) 
-				leader_senders[i].start()
-		for i in range(self.num_servers):
-			if i != pid:
-				acceptor_listener[i] = AcceptorListener(pid, i)
-				acceptor_listener[i].start()
-		for i in range(self.num_servers): 
-			if (i != pid): 
-				acceptor_senders[i] = AcceptorSender(pid, i) 
-				acceptor_senders[i].start()
-		heartbeat_thread = Heartbeat(pid)
-		heartbeat_thread.setDaemon(True)
-		heartbeat_thread.start()
+			leader_clients[i] = LeaderClient(pid, i, num_servers) 
+			leader_clients[i].start()
 		self.state = initial_state
 		self.slot_number = 1 
 		self.proposals = set() 
@@ -144,6 +114,45 @@ class Replica(Thread):
 			self.slot_number += 1 
 		else: 
 			pass 
+
+
+class LeaderListener:
+
+	# Establish connection between leader and accepter
+	def __init__(self, lid, aid, num_servers):
+		Thread.__init__(self)
+		self.lid = lid
+		self.aid = aid
+		self.sock = socket(AF_INET, SOCK_STREAM)
+		self.sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+		self.port = MAXPORT - lid*num_servers - aid
+		self.sock.bind((ADDR, self.port))
+		self.sock.listen(1)
+		self.buffer = ''
+
+	def run(self):
+		pass
+
+
+class LeaderClient:
+
+	def __init__(self, lid, aid, num_servers):
+		Thread.__init__(self)
+		self.lid = lid
+		self.aid = aid
+		self.target_port = BASEPORT + self.aid*num_servers + lid
+		self.connected = False
+		while (not self.connected):
+			try:
+				new_socket = socket(AF_INET, SOCK_STREAM)
+				new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+				new_socket.connect((ADDR, self.target_port))
+				self.sock = new_socket
+				self.connected = True
+			except:
+				time.sleep(SLEEP)
+	def run(self):
+
 
 def main(pid, num_servers, port):
 	pass 
