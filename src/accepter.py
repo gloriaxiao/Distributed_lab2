@@ -1,11 +1,14 @@
 #!/usr/bin/env python
 import sys
+import time
 from socket import AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR, socket, error
 
 
-listeners = []
-clients = []
+listeners = {}
+clients = {}
 BASEPORT = 20000
+MAXPORT = 29999
+SLEEP = 0.05
 
 class pvalue:
 	def __init__(self, ballot_num, slot_num, c):
@@ -45,5 +48,25 @@ class AccepterListener:
 		self.buffer = ''
 
 	def run(self):
-		self.conn, self.addr = self.sock.accept() e
+		self.conn, self.addr = self.sock.accept()
+
+class AccepterClient:
+	def __init__(self, aid, lid, num_leaders): 
+		Thread.__init__(self)
+		self.aid = aid
+		self.lid = lid
+		self.target_port = MAXPORT - lid*num_leaders - aid
+		self.connected = False
+		while (not self.connected):
+			try:
+				new_socket = socket(AF_INET, SOCK_STREAM)
+				new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+				new_socket.connect((ADDR, self.target_port))
+				self.sock = new_socket
+				self.connected = True
+			except:
+				time.sleep(SLEEP)
+
+	def run(self):
+		pass
 

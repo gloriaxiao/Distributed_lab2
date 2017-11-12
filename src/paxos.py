@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import sys
+import time
 
 TIMEOUT = 0.2
 SLEEP = 0.05
@@ -170,7 +171,9 @@ class LeaderClient:
 				self.connected = True
 			except:
 				time.sleep(SLEEP)
+
 	def run(self):
+		pass
 
 
 def main(pid, num_servers, port):
