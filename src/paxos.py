@@ -1,19 +1,38 @@
 #!/usr/bin/env python
 import sys
+from socket import AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR, socket, error
 import time
+from threading import Lock
 
 TIMEOUT = 0.2
 SLEEP = 0.05
 ADDR = 'localhost'
-MAXPORT = 29999
+MAXPORT = 22499
 BASEPORT = 20000
 
-self_pid = -1
+replica_listeners_to_leaders = {}
+replica_senders_to_leaders = {}
+state = State() 
+decision_msgs = [] 
+decision_lock = Lock()
 
-leader_listeners = {}
-leader_clients = {}
-chatLog = []
-state = {} 
+def append_decision_msgs(msg): 
+	decision_lock.acquire()
+	decision_msgs.append(msg)
+	decision_lock.release()
+
+def pop_head_decision_msgs(): 
+	decision_lock.acquire()
+	head = decision_msgs[0]
+	decision_msgs = decision_msgs[1:]
+	decision_lock.release()
+	return head 
+
+def len_decision_msgs(): 
+	decision_lock.acquire()
+	length = len(decision_msgs)
+	decision_lock.release()
+	return length
 
 class State: 
 	def __init__(self): 
@@ -32,20 +51,17 @@ class State:
 
 class Replica(Thread):
 	def __init__(self, pid, num_servers, port):
-		global alives, heartbeat_thread
 		Thread.__init__(self)
 		self.pid = pid
 		self.num_servers = num_servers
 		self.port = port
 		self.buffer = ""
-		self.state = State() 
 		for i in range(self.num_servers):
-			leader_listeners[i] = LeaderListener(pid, i, num_servers)
-			leader_listeners[i].start()
+			replica_listeners_to_leaders[i] = ReplicaListenerToLeader(pid, i, num_servers)
+			replica_listeners_to_leaders[i].start()
 		for i in range(self.num_servers): 
-			leader_clients[i] = LeaderClient(pid, i, num_servers) 
-			leader_clients[i].start()
-		self.state = initial_state
+			replica_senders_to_leaders[i] = ReplicaSenderToLeader(pid, i, num_servers) 
+			replica_senders_to_leaders[i].start()
 		self.slot_number = 1 
 		self.proposals = set() 
 		self.decisions = set()
@@ -57,34 +73,15 @@ class Replica(Thread):
 		self.connected = True
 
 	def run(self):
-		global chatLog
+		global state 
 		while self.connected:
 			if '\n' in self.buffer:
 				(l, rest) = self.buffer.split("\n", 1)
 				(cmd, arguments) = l.split(" ", 1)
 				if cmd == "get":
-					log = ','.join(chatLog)
-					self.master_conn.send('chatLog {}\n'.format(msg))
+					self.master_conn.send('chatLog {}\n'.format(state.toString()))
 				elif cmd == "msg": 
 					self.propose(arguments) 
-				elif cmd == "decision": 
-					# from leader 
-					s, p = arguments.split(" ", 1)
-					self.decisions.union(set((s, p)))
-					while True: 
-						pair = None 
-						for (s1, p1) in self.decisions: 
-							if s1 == self.slot_number: 
-								pair = (s1, p1) 
-								break
-						if pair == None: 
-							break
-						s1, p1 = pair 
-						for (s2, p2) in self.proposals: 
-							if s2 == self.slot_number and p1 != p2: 
-								self.propose(p2)
-								break 
-						self.perform(p1)
 				elif cmd == "crash":
 					pass
 				elif cmd == "crashAfterP1b":
@@ -103,6 +100,24 @@ class Replica(Thread):
 					pass
 				else:
 					print "Unknown command {}".format(l)
+			elif len_decision_msgs() != 0: 
+				arguments = pop_head_decision_msgs() 
+				s, p = arguments.split(" ", 1)
+				self.decisions.union(set((s, p)))
+				while True: 
+					pair = None 
+					for (s1, p1) in self.decisions: 
+						if s1 == self.slot_number: 
+							pair = (s1, p1) 
+							break
+					if pair == None: 
+						break
+					s1, p1 = pair 
+					for (s2, p2) in self.proposals: 
+						if s2 == self.slot_number and p1 != p2: 
+							self.propose(p2)
+							break 
+					self.perform(p1)
 
 	def propose(self, p): 
 		found = False 
@@ -119,8 +134,8 @@ class Replica(Thread):
 					s_prime = i
 					break 
 			self.proposals.union(set((s_prime, p)))
-			for leader in leader_senders: 
-				leader.send("propose " + str(s_prime) + " " + p)
+			for leader in replica_senders_to_leaders: 
+				leader.send("propose " + str(s_prime) + " " + p + "\n")
 
 	def perform(p): 
 		cid, msg = p.split(" ", 1)
@@ -133,52 +148,73 @@ class Replica(Thread):
 		else: 
 			result = self.state.op(msg) 
 			self.slot_number += 1 
-			self.master_conn.send("ack " + str(cid) + " " + str(result))
+			self.master_conn.send("ack " + str(cid) + " " + str(result) + "\n")
 
-
-class LeaderListener:
-
-	# Establish connection between leader and accepter
-	def __init__(self, lid, aid, num_servers):
+class ReplicaListenerToLeader(Thread): 
+	def __init__(self, pid, target_pid, num_servers): 
 		Thread.__init__(self)
-		self.lid = lid
-		self.aid = aid
+		self.pid = pid 
+		self.target_pid = target_pid 
 		self.sock = socket(AF_INET, SOCK_STREAM)
 		self.sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-		self.port = MAXPORT - lid*num_servers - aid
+		self.port = BASEPORT + pid * num_servers + target_pid 
 		self.sock.bind((ADDR, self.port))
 		self.sock.listen(1)
 		self.buffer = ''
 
-	def run(self):
-		pass
+	def run(self): 
+		self.conn, self.addr = self.socket.accept() 
+		while True: 
+			if "\n" in self.buffer: 
+				(l, rest) = self.buffer.split("\n", 1)
+				self.buffer = rest 
+				cmd, arguments = l.split(" ", 1)
+				if cmd == "decision": 
+					append_decision_msgs(arguments)
+				else: 
+					print "invalid command in ReplicaListenerToLeader"
+			else: 
+				try: 
+					data = self.conn.recv(1024)
+					if data == "": 
+						raise ValueError
+					self.buffer += data 
+				except Exception as e:
+					print str(self_pid) + " to " + str(self.target_pid) + " connection closed"
+					self.conn.close()
+					self.conn = None 
+					self.conn, self.addr = self.sock.accept()
 
-
-class LeaderClient:
-
-	def __init__(self, lid, aid, num_servers):
+class ReplicaSenderToLeader(Thread): 
+	def __init__(self, pid, target_pid, num_servers): 
 		Thread.__init__(self)
-		self.lid = lid
-		self.aid = aid
-		self.target_port = BASEPORT + self.aid*num_servers + lid
-		self.connected = False
-		while (not self.connected):
-			try:
+		self.pid = pid 
+		self.target_pid = target_pid
+		self.target_port = BASEPORT + target_pid * num_servers + pid 
+		self.port = BASEPORT + pid * num_servers + num_servers + target_pid
+		self.sock = None 
+
+	def run(self): 
+		pass 
+
+	def send(self, msg): 
+		try: 
+			self.sock.send(msg)
+		except Exception as e: 
+			if self.sock: 
+				self.sock.close() 
+				self.sock = None 
+			try: 
 				new_socket = socket(AF_INET, SOCK_STREAM)
 				new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 				new_socket.connect((ADDR, self.target_port))
 				self.sock = new_socket
-				self.connected = True
-			except:
+			except: 
 				time.sleep(SLEEP)
 
-	def run(self):
-		pass
-
-
 def main(pid, num_servers, port):
-	pass 
-
+	replica = Replica(pid, num_servers, port)
+	replica.start()  
 
 if __name__ == "__main__":
 	args = sys.argv
