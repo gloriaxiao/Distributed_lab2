@@ -14,6 +14,12 @@ sender_to_acceptors = {}
 
 p1b_msgs = []
 p1b_lock = Lock() 
+p2b_msgs = [] 
+p2b_lock = Lock() 
+adopted_msgs = [] 
+adopted_lock = Lock() 
+preempted_msgs = [] 
+preempted_lock = Lock()
 
 ballet_num = 0 
 active = False 
@@ -38,10 +44,10 @@ def len_list(lst, lock):
 	return length
 
 def send_adopted_to_leader(b, pvalues): 
-	pass 
+	append_to_list(adopted_msgs, adopted_lock, (b, pvalues)) 
 
 def send_preempted_to_leader(b): 
-	pass 
+	append_to_list(preempted_msgs, preempted_lock, b) 
 
 def spawnScout(b): 
 	waitfor = set(listener_to_acceptors.keys()) 
@@ -79,7 +85,6 @@ def spawnCommander(b, s, p):
 				send_preempted_to_leader(b_prime)
 				return
 
-
 def init_leader(lid, num_servers):
 	global listener_to_replicas, sender_to_replicas, listener_to_acceptors, sender_to_acceptors 
 	for i in range(num_servers):
@@ -95,15 +100,6 @@ def init_leader(lid, num_servers):
 		sender_to_acceptors[i] = LeaderSenderToAcceptor(lid, i, num_servers)
 		sender_to_acceptors[i].start()
 	spawnScout(ballot_number)
-
-class Commander:
-	def __init__(self):
-		pass
-
-class Scout:
-	def __init__(self):
-		pass
-
 
 class LeaderListenerToReplica(Thread): 
 	def __init__(self, pid, target_pid, num_servers): 
