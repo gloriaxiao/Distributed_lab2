@@ -2,7 +2,8 @@
 import sys
 from socket import AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR, socket, error
 import time
-from threading import Lock
+from threading import Lock, Thread
+
 
 listeners = {}
 clients = {}
@@ -17,11 +18,12 @@ ADDR = 'localhost'
 
 
 def init_accepter(aid, num_leaders):
-	for i in range(self.num_leaders):
-		listener[i] = AccepterListener(pid, i, num_leaders)
-		listener[i].start()
-	for i in range(self.num_leaders):
-		clients[i] = AccepterClient(pid, i, num_leaders)
+	global listeners, clients
+	for i in range(num_leaders):
+		listeners[i] = AccepterListener(aid, i, num_leaders)
+		listeners[i].start()
+	for i in range(num_leaders):
+		clients[i] = AccepterClient(aid, i, num_leaders)
 		clients[i].start()
 
 
@@ -61,7 +63,7 @@ class Pvalue:
 # if a pvalue accepted by majority, 
 
 
-class AccepterListener:
+class AccepterListener(Thread):
 	def __init__(self, aid, lid, num_leaders): 
 		Thread.__init__(self)
 		self.aid = aid
@@ -107,7 +109,7 @@ class AccepterListener:
 					self.conn, self.addr = self.sock.accept()
 
 
-class AccepterClient:
+class AccepterClient(Thread):
 	def __init__(self, aid, lid, num_leaders): 
 		Thread.__init__(self)
 		self.aid = aid
@@ -137,4 +139,7 @@ class AccepterClient:
 				self.sock = new_socket
 			except:
 				time.sleep(SLEEP)
+
+if __name__ == "__main__":
+	init_accepter(0, 5)
 
