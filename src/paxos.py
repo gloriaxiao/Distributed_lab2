@@ -13,7 +13,22 @@ leader_listeners = {}
 leader_senders = {} 
 accepter_listeners = {} 
 accepter_senders = {} 
-chatLog = []
+state = {} 
+
+class State: 
+	def __init__(self): 
+		self.count = 0 
+		self.mandatory = [] 
+		self.optional = [] 
+
+	def op(self, msg): 
+		self.mandatory.append(msg) 
+		return len(self.mandatory)
+
+	def toString(self): 
+		return ("{" + "'count': " + str(self.count) + 
+			", mandatory: " + ",".join(self.mandatory) + 
+			", optional: " + ",".join(self.optional))
 
 class Heartbeat(Thread): 
 	def __init__(self, index): 
@@ -39,6 +54,7 @@ class Replica(Thread):
 		self.num_servers = num_servers
 		self.port = port
 		self.buffer = ""
+		self.state = State() 
 		for i in range(self.num_servers):
 			if i != pid:
 				leader_listeners[i] = LeaderListener(pid, i)
@@ -81,6 +97,7 @@ class Replica(Thread):
 				elif cmd == "msg": 
 					self.propose(arguments) 
 				elif cmd == "decision": 
+					# from leader 
 					s, p = arguments.split(" ", 1)
 					self.decisions.union(set((s, p)))
 					while True: 
@@ -135,7 +152,7 @@ class Replica(Thread):
 				leader.send("propose " + str(s_prime) + " " + p)
 
 	def perform(p): 
-		cid, op = p.split(" ", 1)
+		cid, msg = p.split(" ", 1)
 		found = False 
 		for i in range(self.slot_number): 
 			if (i, p) in self.decisions: 
@@ -143,7 +160,9 @@ class Replica(Thread):
 		if found: 
 			self.slot_number += 1 
 		else: 
-			pass 
+			result = self.state.op(msg) 
+			self.slot_number += 1 
+			self.master_conn.send("ack " + str(cid) + " " + str(result))
 
 def main(pid, num_servers, port):
 	pass 
