@@ -2,7 +2,7 @@
 import sys
 from socket import AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR, socket, error
 import time
-from threading import Lock
+from threading import Thread, Lock
 
 TIMEOUT = 0.2
 SLEEP = 0.05
@@ -12,7 +12,6 @@ BASEPORT = 20000
 
 replica_listeners_to_leaders = {}
 replica_senders_to_leaders = {}
-state = State() 
 decision_msgs = [] 
 decision_lock = Lock()
 
@@ -48,6 +47,8 @@ class State:
 		return ("{" + "'count': " + str(self.count) + 
 			", mandatory: " + ",".join(self.mandatory) + 
 			", optional: " + ",".join(self.optional))
+
+state = State() 
 
 class Replica(Thread):
 	def __init__(self, pid, num_servers, port):
@@ -163,7 +164,7 @@ class ReplicaListenerToLeader(Thread):
 		self.buffer = ''
 
 	def run(self): 
-		self.conn, self.addr = self.socket.accept() 
+		self.conn, self.addr = self.sock.accept() 
 		while True: 
 			if "\n" in self.buffer: 
 				(l, rest) = self.buffer.split("\n", 1)
