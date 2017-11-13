@@ -131,6 +131,7 @@ def leader(lid, num_servers):
 		elif(not_empty(preempted_msgs, preempted_lock)):
 			preempted_lock.acquire()
 			for b in preempted_msgs:
+				print "Leader {:d} gets preempted msg: {}".format(LID, b)
 				if b > ballot_num:
 					active = False
 					ballot_num = (b/NUM_SERVERS + 1)*NUM_SERVERS + lid
@@ -154,9 +155,10 @@ def Scout(b):
 		with scout_condition:
 			while not scout_responses:
 				scout_condition.wait()
-			print "Stopped waiting for scout response"
+			print "Leader " + str(LID) + " stopped waiting for scout response"
 			for aid, r in scout_responses.items():
 				b_num, p_vals = r
+				print "aid: " + str(aid) + " b_num: " + str(b_num) + " pvals: " + str(p_vals)
 				if b_num == b:
 					waitfor.remove(aid)
 					pvalues.update(p_vals)
@@ -183,11 +185,13 @@ def Commander(b, s, p, cv):
 			while (not commander_response.get((b,s), [])):
 				cv.wait()
 			responses = commander_response[(b,s)]
-			print "Stop waiting for commander responses"
+			print "Leader " + str(LID) + " stopped waiting for commander responses"
 			for r in responses:
 				aid, b_num = r
+				print "leader: " + str(LID) + " aid: " + str(aid) + " b_num: " + str(b_num) + " b: " + str(b)
 				if b_num == b:
 					waitfor.remove(aid)
+					print "remove " + str(aid) + " from waitfor so length of waitfor is " + str(len(waitfor))
 					if len(waitfor) < NUM_SERVERS/2:
 						for i in sender_to_replicas:
 							sender_to_replicas[i].send("decision {} {}".format(str(s), str(p)))
@@ -271,6 +275,7 @@ class LeaderSenderToReplica(Thread):
 		self.target_port = BASEPORT + 2 * rid * num_servers + lid 
 		self.port = LEADER_BASEPORT + 4 * lid * num_servers + num_servers + rid
 		self.connected = False
+		self.sock = None 
 
 	def run(self):
 		while not self.connected:
@@ -281,7 +286,6 @@ class LeaderSenderToReplica(Thread):
 				new_socket.connect((ADDR, self.target_port))
 				self.sock = new_socket
 				self.connected = True
-				# print "leader " + str(self.lid) + " send to replica " + str(self.rid) + " at port " + str(self.target_port) + " from " + str(self.port)
 			except Exception as e:
 				time.sleep(SLEEP)
 
@@ -290,6 +294,7 @@ class LeaderSenderToReplica(Thread):
 			msg += '\n'
 		try: 
 			self.sock.send(msg)
+			print "leader " + str(self.lid) + " send " + msg[:-1] + " to replica " + str(self.rid) + " at port " + str(self.target_port) + " from " + str(self.port)
 		except Exception as e: 
 			if self.sock: 
 				self.sock.close() 
@@ -301,7 +306,9 @@ class LeaderSenderToReplica(Thread):
 				new_socket.connect((ADDR, self.target_port))
 				self.sock = new_socket
 				self.sock.send(msg)
+				print "leader " + str(self.lid) + " send " + msg[-1] + " to replica " + str(self.rid) + " at port " + str(self.target_port) + " from " + str(self.port)
 			except: 
+				print "leader " + str(self.lid) + " failed to send to replica " + str(self.rid) + " at port " + str(self.target_port) + " from " + str(self.port)
 				time.sleep(SLEEP)
 
 
@@ -378,41 +385,41 @@ class LeaderSenderToAcceptor(Thread):
 		self.num_accpeters = num_servers
 		self.target_port = ACCEPTER_BASEPORT + 2 * aid * num_servers + lid
 		self.port = LEADER_BASEPORT + 4 * lid * num_servers + 3 * num_servers + aid
-		self.connected = False
 		self.sock = None
 
 	def run(self): 
 		pass
-		# while not self.connected:
-		# 	try:
-		# 		new_socket = socket(AF_INET, SOCK_STREAM)
-		# 		new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-		# 		new_socket.bind((ADDR, self.port))
-		# 		new_socket.connect((ADDR, self.target_port))
-		# 		self.sock = new_socket
-		# 		self.connected = True
-		# 		print "leader " + str(self.lid) + " connected to acceptor " + str(self.aid) + " at port " + str(self.target_port) + " from " + str(self.port)
-		# 	except:
-		# 		time.sleep(SLEEP)
+		while not self.sock:
+			try:
+				new_socket = socket(AF_INET, SOCK_STREAM)
+				new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+				new_socket.bind((ADDR, self.port))
+				new_socket.connect((ADDR, self.target_port))
+				self.sock = new_socket
+				self.connected = True
+				print "leader " + str(self.lid) + " connected to acceptor " + str(self.aid) + " at port " + str(self.target_port) + " from " + str(self.port)
+			except:
+				time.sleep(SLEEP)
 
 	def send(self, msg): 
 		if not msg.endswith('\n'):
 			msg += '\n'
 		try:
 			self.sock.send(msg)
+			print "leader " + str(self.lid) + " sent " + msg[:-1] + " to acceptor " + str(self.aid)
 		except Exception as e:
 			if self.sock:
 				self.sock.close()
-  				self.sock = None
-  			while not self.connected:
-		  		try:
-		  			new_socket = socket(AF_INET, SOCK_STREAM)
-					new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-					new_socket.bind((ADDR, self.port))
-					new_socket.connect((ADDR, self.target_port))
-					self.sock = new_socket
-					self.connected = True
-					self.sock.send(msg)
-				except:
-					time.sleep(SLEEP)
+				self.sock = None
+  		try:
+  			new_socket = socket(AF_INET, SOCK_STREAM)
+  			new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+  			new_socket.bind((ADDR, self.port))
+  			new_socket.connect((ADDR, self.target_port))
+  			self.sock = new_socket
+  			self.sock.send(msg)
+  			print "leader " + str(self.lid) + " sent " + msg[:-1] + " to acceptor " + str(self.aid) 
+  		except:
+  			print "leader " + str(self.lid) + " failed to send to acceptor " + str(self.aid) 
+  			time.sleep(SLEEP)
 		# print "Leader {:d} sends {} to Acceptor {:d}".format(self.lid, msg[:-1], self.aid)
