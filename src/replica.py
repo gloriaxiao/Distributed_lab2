@@ -96,21 +96,14 @@ class Replica(Thread):
 					print "Replica {:d} makes proposal".format(self.pid)
 					self.propose(arguments) 
 				elif cmd == "crash":
-					pass
+					exit()
 				elif cmd == "crashAfterP1b":
-					pass
+					broadcast_to_leaders('crashafterP1b')
 				elif cmd == "crashAfterP2b":
-					pass
-				elif cmd == "crashP1a":
+					broadcast_to_leaders('crashafterP2b')
+				elif cmd == "crashP1a" or cmd == "crashP2a" or cmd == "crashDecision":
 					# Crash after sending p1a
-					pids = [int(i) for i in l.split()[1:]]
-					pass
-				elif cmd == "crashP2a":
-					pids = [int(i) for i in l.split()[1:]]
-					pass
-				elif cmd == "crashDecision":
-					pids = [int(i) for i in l.split()[1:]]
-					pass
+					broadcast_to_leaders(l)
 				else:
 					print "Unknown command {}".format(l)
 			elif len_decision_msgs() != 0: 
@@ -184,6 +177,14 @@ class Replica(Thread):
 			self.slot_number += 1 
 			self.master_conn.send("ack " + str(cid) + " " + str(result) + "\n")
 
+	def kill(self):
+		try:
+			self.connected = False
+			self.master_conn.close()
+			self.socket.close()
+		except:
+			pass
+
 
 class ReplicaListenerToLeader(Thread): 
 	def __init__(self, rid, lid, num_servers): 
@@ -221,6 +222,12 @@ class ReplicaListenerToLeader(Thread):
 					self.conn = None 
 					self.conn, self.addr = self.sock.accept()
 
+	def kill(self):
+		try:
+			self.conn.close()
+			self.sock.close()
+		except:
+			pass
 
 class ReplicaSenderToLeader(Thread): 
 	def __init__(self, rid, lid, num_servers): 
@@ -265,6 +272,25 @@ class ReplicaSenderToLeader(Thread):
 			except: 
 				time.sleep(SLEEP)
 		print "Replica {:d} sends to leader {:d} at port {:d}: {}".format(self.rid, self.lid, self.target_port, msg)
+
+	def kill(self):
+		try:
+			self.sock.close()
+		except:
+			pass
+
+def broadcast_to_leaders(msg):
+	global replica_senders_to_leaders
+	for i in replica_senders_to_leaders:
+		replica_senders_to_leaders[i].send(msg)
+
+
+def exit():
+	global replica_listeners_to_leaders, replica_senders_to_leaders
+	for i in replica_listeners_to_leaders:
+		replica_listeners_to_leaders[i].kill()
+	for i in replica_senders_to_leaders:
+		replica_senders_to_leaders[i].kill()
 
 def main(pid, num_servers, port):
 	# print "starting main"
