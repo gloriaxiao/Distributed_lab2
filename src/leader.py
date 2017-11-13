@@ -91,7 +91,6 @@ def leader(lid, num_servers):
 					b_first, s, p = pvals.split()
 					b_first = int(b_first)
 					s = int(s)
-					# s, p = s_and_p.split(, 1)
 					if s not in pmax: 
 						pmax[s] = b_first, s, p 
 					else:
@@ -265,7 +264,6 @@ class LeaderSenderToReplica(Thread):
 				self.sock = new_socket
 			except: 
 				time.sleep(SLEEP)
-
 
 
 class LeaderListenerToAcceptor(Thread): 
