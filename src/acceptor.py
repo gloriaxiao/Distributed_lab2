@@ -84,7 +84,10 @@ class AcceptorListener(Thread):
 					num = int(msgs[1])
 					print "Acceptor {:d} gets p1a with {:d} from Leader {:d}".format(self.aid, num, self.lid)
 					update_ballot_num('p1a', num)
-					clients[self.lid].send('p1b ' + str(num) + ' ' + state_repr())
+					try: 
+						clients[self.lid].send('p1b ' + str(num) + ' ' + state_repr())
+					except: 
+						"acceptor key error: " + str(self.lid) + " " + str(len(clients)) + " " + str(state_repr())
 				elif msgs[0] == 'p2a':
 					b_num, s_num, proposal = msgs[1:-1]
 					b_num = int(b_num)
@@ -139,6 +142,7 @@ class AcceptorClient(Thread):
 			msg += '\n'
 		try:
 			self.sock.send(msg)
+			print "acceptr " + str(self.aid) + " send " + msg[:-1] + " to leader " + str(self.lid)
 		except Exception as e:
 			if self.sock:
 				self.sock.close()
