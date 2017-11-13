@@ -100,7 +100,8 @@ def leader(lid, num_servers):
 						pmax[s] = b_first, s, p
 			pmax = [(s, p) for (b, s, p) in pmax_dictionary.values()]
 			new_proposals = set(pmax)
-			for (s, p) in proposals: 
+			for t in proposals: 
+				s, p = t 
 				found = False 
 				for (s_prime, p_prime) in pmax: 
 					if s == s_prime and p_prime != p: 
@@ -109,7 +110,8 @@ def leader(lid, num_servers):
 				if not found: 
 					new_proposals.add((s, p))
 			proposals = new_proposals
-			for (s, p) in proposals: 
+			for t in proposals: 
+				s, p = t 
 				cv = commander_conditions.get((b,s), Condition())
 				commander_conditions[(b,s)] = cv
 				newc = Thread(target=Commander, args=(b, s, p, cv))
@@ -217,7 +219,7 @@ class LeaderListenerToReplica(Thread):
 							found = True 
 							break
 					if not found: 
-						proposals = proposals.add((s, p))
+						proposals.add((s, p))
 						if active:
 							cv = Condition()
 							newc = Thread(target=Commander, args=(ballot_num, s, p, cv))

@@ -87,7 +87,7 @@ class Replica(Thread):
 			if '\n' in self.buffer:
 				(l, rest) = self.buffer.split("\n", 1)
 				(cmd, arguments) = l.split(" ", 1)
-				print "Replica {:d} receives msgs from master {}".format(self.pid, l)
+				# print "Replica {:d} receives msgs from master {}".format(self.pid, l)
 				if cmd == "get":
 					self.master_conn.send('chatLog {}\n'.format(state.toString()))
 				elif cmd == "msg": 
@@ -116,14 +116,16 @@ class Replica(Thread):
 				self.decisions.union(set((s, p)))
 				while True: 
 					pair = None 
-					for (s1, p1) in self.decisions: 
+					for t in self.decisions: 
+						s1, p1 = t 
 						if s1 == self.slot_number: 
 							pair = (s1, p1) 
 							break
 					if pair == None: 
 						break
 					s1, p1 = pair 
-					for (s2, p2) in self.proposals: 
+					for t in self.proposals: 
+						s2, p2 = t 
 						if s2 == self.slot_number and p1 != p2: 
 							self.propose(p2)
 							break 
@@ -142,27 +144,33 @@ class Replica(Thread):
 
 	def propose(self, p): 
 		found = False 
-		for (s, p_prime) in self.decisions: 
+		for t in self.decisions: 
+			(s, p_prime) = t 
 			if p == p_prime:
 				found = True 
 				break 
 		if not found: 
 			total_set = self.decisions.union(self.proposals)
 			all_slots_taken = [s for (s, p) in total_set]
+			if len(all_slots_taken) == 0: 
+				upper_bound = 2
+			else: 
+				upper_bound = max(all_slots_taken) + 2 
 			s_prime = -1 
-			for i in range (1, max(all_slots_taken) + 2): 
+			for i in range (1, upper_bound): 
 				if i not in all_slots_taken: 
 					s_prime = i
 					break 
 			self.proposals.union(set((s_prime, p)))
-			for leader in replica_senders_to_leaders: 
-				leader.send("propose " + str(s_prime) + " " + p + "\n")
+			for i in replica_senders_to_leaders: 
+				replica_senders_to_leaders[i].send("propose " + str(s_prime) + " " + p + "\n")
 
 	def perform(p): 
 		cid, msg = p.split(" ", 1)
 		found = False 
 		for i in range(self.slot_number): 
-			if (i, p) in self.decisions: 
+			if t in self.decisions: 
+				(i, p) = t
 				found = True 
 		if found: 
 			self.slot_number += 1 
@@ -218,6 +226,7 @@ class ReplicaSenderToLeader(Thread):
 		self.port = BASEPORT + 2 * rid * num_servers + num_servers + lid
 		# print "replica with port " +  str(self.port) + " connecting to leader " + str(self.lid) + " at port " + str(self.target_port)
 		self.connected = False
+		self.sock = None 
 
 	def run(self): 
 		while not self.connected:
