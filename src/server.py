@@ -13,24 +13,12 @@ SLEEP = 0.05
 ADDR = 'localhost'
 BASEPORT = 20000
 chatLog = []
+listeners = {}
+clients = {}
 replica = None
 leader = None
 acceptor = None
 
-class Server:
-	def __init__(self, )
-		self.listeners = {}
-		self.clients = {}
-		for i in range(self.num_servers):
-			if i != pid:
-				self.listeners[i] = ServerListener(pid, i)
-				self.listeners[i].start()
-		for i in range(self.num_servers): 
-			if (i != pid): 
-				self.clients[i] = ServerClient(pid, i) 
-				self.clients[i].start()
-		self.master_thread = MasterListener(pid, num_servers, port)
-		self.master_thread.start()
 
 class MasterListener(Thread):
 	def __init__(self, pid, num_servers, port):
@@ -47,6 +35,7 @@ class MasterListener(Thread):
 		self.connected = True
 
 	def run(self):
+		global replica, leader, acceptor
 		while self.connected:
 			if '\n' in self.buffer:
 				l, rest = self.buffer.split('\n', 1)
@@ -58,11 +47,11 @@ class MasterListener(Thread):
 					self.master_conn.send('chatLog {}\n'.format("\n".join(chatLog)))
 				elif cmd == "msg": 
 					print "Replica {:d} makes proposal".format(self.pid)
-					self.propose(arguments)
+					replica.propose(arguments)
 				elif cmd == "crash":
 					exit()
 				elif cmd == "crashAfterP1b":
-					broadcast_to_leaders('crashafterP1b')
+					
 				elif cmd == "crashAfterP2b":
 					broadcast_to_leaders('crashafterP2b')
 				elif cmd == "crashP1a" or cmd == "crashP2a" or cmd == "crashDecision":
@@ -80,7 +69,6 @@ class MasterListener(Thread):
 					self.master_conn.close()
 					self.master_conn = None 
 					self.master_conn, self.master_addr = self.socket.accept()
-
 				
 
 class ServerListener(Thread):
@@ -100,7 +88,6 @@ class ServerListener(Thread):
 		print "Server " + str(self.pid) + " listen to Server " + str(self.target_pid) + " at port " + str(self.port)
 
 
-
 class ServerClient(Thread):
 	def __init__(self, pid, target_pid):
 	  	Thread.__init__(self)
@@ -110,7 +97,6 @@ class ServerClient(Thread):
 	  	self.port = BASEPORT + 2 * pid * num_servers + num_servers + target_pid
 	  	self.sock = None
 	  	self.connected = False
-
 
 	def run(self):
 		while not self.connected:
@@ -149,8 +135,6 @@ class ServerClient(Thread):
 		except:
 			pass
 
-
-
 def make_sure_path_exists(path):
 	try:
 		os.makedirs(path)
@@ -159,12 +143,20 @@ def make_sure_path_exists(path):
 			print("Error: Path couldn't be recognized!")
 			print(e)
 
-
 def main(pid, num_servers, port):
-	global replica, leader, acceptor
+	global replica, leader, acceptor, listeners, clients
 	LOG_PATH = "chatLogs/log{:d}.txt".format(pid)
 	make_sure_path_exists("chatLogs")
-	server = Server(pid, num_servers, port)
+	for i in range(num_servers):
+		if i != pid:
+			listeners[i] = ServerListener(pid, i)
+			listeners[i].start()
+	for i in range(num_servers): 
+		if (i != pid): 
+			clients[i] = ServerClient(pid, i) 
+			clients[i].start()
+	master_thread = MasterListener(pid, num_servers, port)
+	master_thread.start()
 	replica = Replica(server)
 	leader = Leader(server)
 	acceptor = Acceptor(server)
