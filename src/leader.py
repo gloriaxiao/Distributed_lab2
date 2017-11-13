@@ -52,7 +52,7 @@ def not_empty(l, lock):
 	return (length != 0)
 
 
-def main(lid, num_servers):
+def init_leader(lid, num_servers):
 	global leader_thread
 	leader_thread = Thread(target=leader,args=(lid, num_servers))
 	leader_thread.start()

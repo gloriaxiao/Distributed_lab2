@@ -17,7 +17,7 @@ BALLOT_LOCK = Lock()
 ADDR = 'localhost'
 
 
-def init_accepter(aid, num_leaders):
+def init_acceptor(aid, num_leaders):
 	global listeners, clients
 	for i in range(num_leaders):
 		listeners[i] = AccepterListener(aid, i, num_leaders)

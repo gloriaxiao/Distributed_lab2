@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+import acceptor
+import leader
 import sys
 from socket import AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR, socket, error
 import time
@@ -217,7 +219,11 @@ class ReplicaSenderToLeader(Thread):
 
 def main(pid, num_servers, port):
 	replica = Replica(pid, num_servers, port)
-	replica.start()  
+	replica.start()
+	for i in range(num_servers):
+		acceptor.init_acceptor(i, num_servers)
+		leader.init_leader(i, num_servers)
+
 
 if __name__ == "__main__":
 	args = sys.argv
