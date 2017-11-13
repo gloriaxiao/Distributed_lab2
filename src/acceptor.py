@@ -89,7 +89,7 @@ class AcceptorListener(Thread):
 					except: 
 						"acceptor key error: " + str(self.lid) + " " + str(len(clients)) + " " + str(state_repr())
 				elif msgs[0] == 'p2a':
-					b_num, s_num, proposal = msgs[1:-1]
+					b_num, s_num, proposal = msgs[1:]
 					b_num = int(b_num)
 					s_num = int(s_num)
 					print "Acceptor {:d} gets p2a with {:d}, {:d}, {} from Leader {:d}".format(self.aid, b_num, s_num, proposal, self.lid)
