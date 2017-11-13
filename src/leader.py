@@ -19,7 +19,7 @@ sender_to_acceptors = {}
 leader_thread = None
 scout_thread = None
 scout_condition = None
-scout_response = ""
+scout_responses = {}
 
 commander_threads = {}
 commander_conditions = {}
@@ -143,21 +143,23 @@ def Scout(b):
 	pvalues = set()
 	while True:
 		with scout_condition:
-			while not scout_response:
+			while not scout_responses:
 				scout_condition.wait()
-			r = scout_response
-			scout_response = ""
-			aid, b_num, p_vals = r
-			if b_num == b:
-				waitfor.remove(aid)
-				pvalues.update(p_vals)
-				if len(waitfor < NUM_SERVERS/2):
-					entry = b, pvalues
-					adopted_msg = entry
+			for aid, r in scout_responses.items():
+				b_num, p_vals = r
+				if b_num == b:
+					waitfor.remove(aid)
+					pvalues.update(p_vals)
+					if len(waitfor < NUM_SERVERS/2):
+						entry = b, pvalues
+						adopted_msg = entry
+						scout_responses = {}
+						return
+				else:
+					scout_responses = {}
+					send_preempted_to_leader(b_num)
 					return
-			else:
-				send_preempted_to_leader(b_num)
-				return
+			scout_responses = {}
 
 
 def Commander(b, s, p, cv):
@@ -293,7 +295,7 @@ class LeaderListenerToAcceptor(Thread):
 
 
 	def run(self): 
-		global scout_response, commander_response, scout_conditions, commander_conditions
+		global scout_responses, commander_response, scout_condition, commander_conditions
 		self.conn, self.addr = self.sock.accept()	
 		# print "leader " + str(self.lid) + " listen to acceptor " + str(self.aid) + " at port " + str(self.port)
 		while True:
@@ -306,14 +308,10 @@ class LeaderListenerToAcceptor(Thread):
 					proposed_b = int(proposed_b)
 					b_num = int(b_num)
 					pvalues = accepts.strip().split(';')
-					cv = scout_conditions[proposed_b]
-					with cv:
-						entry = self.aid, b_num, pvalues
-						rlist = scout_response.get(proposed_b, [])
-						rlist.append(entry)
-						scout_response[proposed_b] = rlist
+					with scout_conditions:
+						entry = b_num, pvalues
+						scout_responses[self.aid] = entry
 						cv.notify()
-
 				elif (cmd == 'p2b'):
 					proposed_b, b_num = info.split()
 					proposed_b = int(proposed_b)
