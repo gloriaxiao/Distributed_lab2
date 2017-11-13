@@ -15,20 +15,20 @@ LEADER_BASEPORT = 25000
 
 replica_listeners_to_leaders = {}
 replica_senders_to_leaders = {}
-decision_msgs = [] 
-decision_lock = Lock()
-replica = None 
+# decision_msgs = [] 
+# decision_lock = Lock()
+# replica = None 
 
-def append_to_list(lst, lock, msg): 
-	lock.acquire() 
-	lst.append(msg)
-	lock.release()
+# def append_to_list(lst, lock, msg): 
+# 	lock.acquire() 
+# 	lst.append(msg)
+# 	lock.release()
 
-def not_empty(l, lock):
-	lock.acquire()
-	length = len(l)
-	lock.release()
-	return (length != 0)
+# def not_empty(l, lock):
+# 	lock.acquire()
+# 	length = len(l)
+# 	lock.release()
+# 	return (length != 0)
 
 class State: 
 	def __init__(self): 
@@ -115,11 +115,11 @@ class Replica(Thread):
 					self.master_conn = None 
 					self.master_conn, self.master_addr = self.socket.accept()
 
-	def decide(self): 
-		global decision_lock, decision_msgs
-		decision_lock.acquire() 
-		arguments = decision_msgs[0]
-		decision_msgs = decision_msgs[1:]
+	def decide(self, arguments): 
+		# global decision_lock, decision_msgs
+		# decision_lock.acquire() 
+		# arguments = decision_msgs[0]
+		# decision_msgs = decision_msgs[1:]
 		s, p = arguments.split(" ", 1)
 		self.decisions.add((s, p))
 		print "leader: " + str(self.pid) + " self.decisions: " + str(self.decisions)		
@@ -221,9 +221,9 @@ class ReplicaListenerToLeader(Thread):
 				cmd, arguments = l.split(None, 1)
 				if cmd == "decision": 
 					print "replica " + str(self.rid) + " received decision from leader " + str(self.lid)
-					append_to_list(decision_msgs, decision_lock, arguments)
+					# append_to_list(decision_msgs, decision_lock, arguments)
 					global replica 
-					replica.decide()
+					replica.decide(arguments)
 				else: 
 					print "invalid command in ReplicaListenerToLeader"
 			else: 
