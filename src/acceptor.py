@@ -29,8 +29,8 @@ def init_acceptor_senders(aid, num_leaders):
 		clients[i].start()
 
 
-def update_ballot_num(req_type, lid, b, p_val=None):
-	global BALLOT_NUM
+def update_ballot_num(req_type, b, p_val=None):
+	global BALLOT_NUM, ACCEPTED
 	BALLOT_LOCK.acquire()
 	if req_type == 'p1a':
 		if b > BALLOT_NUM:	
@@ -45,7 +45,10 @@ def state_repr():
 	global BALLOT_NUM, ACCEPTED
 	BALLOT_LOCK.acquire()
 	accept_strs = [str(v) for v in ACCEPTED]
-	output = '{:d} {}'.format(BALLOT_NUM, ';'.join(accept_strs))
+	accept_repr = ';'.join(accept_strs)
+	if not accept_repr:
+		accept_repr = 'none'
+	output = '{:d} {}'.format(BALLOT_NUM, accept_repr)
 	BALLOT_LOCK.release()
 	return output
 
@@ -78,17 +81,21 @@ class AcceptorListener(Thread):
 				self.buffer = rest
 				msgs = l.split()
 				if msgs[0] == 'p1a':
-					num = int(msgs[1])*self.num_leaders + self.lid
-					update_ballot_num('p1a', self.lid, num)
+					num = int(msgs[1])
+					print "Acceptor {:d} gets p1a with {:d} from Leader {:d}".format(self.aid, num, self.lid)
+					update_ballot_num('p1a', num)
 					clients[self.lid].send('p1b ' + str(num) + ' ' + state_repr())
 				elif msgs[0] == 'p2a':
 					b_num, s_num, proposal = msgs[1:-1]
-					b_num = int(b_num)*self.num_leaders + self.lid
-					v = Pvalue(b_num, int(s_num), proposal)
-					update_ballot_num('p2a', self.lid, b_num, v)
+					b_num = int(b_num)
+					s_num = int(s_num)
+					print "Acceptor {:d} gets p2a with {:d}, {:d}, {} from Leader {:d}".format(self.aid, b_num, s_num, proposal, self.lid)
+					v = Pvalue(b_num, s_num, proposal)
+					update_ballot_num('p2a', b_num, v)
 					BALLOT_LOCK.acquire()
-					clients[self.lid].send('p2b ' + str(b_num) + ' ' + str(BALLOT_NUM))
+					msg = 'p2b ' + str(b_num) + ' ' + str(s_num) + ' ' + str(BALLOT_NUM)
 					BALLOT_LOCK.release()
+					clients[self.lid].send(msg)
 			else:
 				try:
 					data = self.conn.recv(1024)
@@ -141,5 +148,7 @@ class AcceptorClient(Thread):
 	  			new_socket.bind((ADDR, self.port))
 	  			new_socket.connect((ADDR, self.target_port))
 	  			self.sock = new_socket
+	  			self.sock.send(msg)
 	  		except:
 	  			time.sleep(SLEEP)
+	  	# print "Acceptor {:d} sends {} to leader {:d}".format(self.aid, msg, self.lid)

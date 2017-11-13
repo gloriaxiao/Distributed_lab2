@@ -71,6 +71,7 @@ class Replica(Thread):
 			replica_senders_to_leaders[i].start()
 		leader.init_leader_senders(self.pid, num_servers)
 		acceptor.init_acceptor_senders(self.pid, num_servers)
+		leader.init_leader(pid, num_servers)
 		self.slot_number = 1 
 		self.proposals = set() 
 		self.decisions = set()
@@ -86,11 +87,13 @@ class Replica(Thread):
 		while self.connected:
 			if '\n' in self.buffer:
 				(l, rest) = self.buffer.split("\n", 1)
+				self.buffer = rest
 				(cmd, arguments) = l.split(" ", 1)
-				# print "Replica {:d} receives msgs from master {}".format(self.pid, l)
+				print "Replica {:d} receives msgs from master {}".format(self.pid, l)
 				if cmd == "get":
 					self.master_conn.send('chatLog {}\n'.format(state.toString()))
 				elif cmd == "msg": 
+					print "Replica {:d} makes proposal".format(self.pid)
 					self.propose(arguments) 
 				elif cmd == "crash":
 					pass
@@ -113,7 +116,7 @@ class Replica(Thread):
 			elif len_decision_msgs() != 0: 
 				arguments = pop_head_decision_msgs() 
 				s, p = arguments.split(" ", 1)
-				self.decisions.union(set((s, p)))
+				self.decisions.add((s, p))
 				while True: 
 					pair = None 
 					for t in self.decisions: 
@@ -137,7 +140,6 @@ class Replica(Thread):
 						raise ValueError
 					self.buffer += data 
 				except Exception as e:
-					print "Leader " + str(self.lid) + " lose connection to acceptor " + str(self.aid)
 					self.master_conn.close()
 					self.master_conn = None 
 					self.master_conn, self.master_addr = self.socket.accept()
@@ -148,21 +150,24 @@ class Replica(Thread):
 			(s, p_prime) = t 
 			if p == p_prime:
 				found = True 
-				break 
+				break
+		print "not found a decision for proposal " + p
 		if not found: 
 			total_set = self.decisions.union(self.proposals)
 			all_slots_taken = [s for (s, p) in total_set]
+			print "current slots"
+			print all_slots_taken
 			if len(all_slots_taken) == 0: 
 				upper_bound = 2
-			else: 
+			else:
 				upper_bound = max(all_slots_taken) + 2 
 			s_prime = -1 
 			for i in range (1, upper_bound): 
 				if i not in all_slots_taken: 
 					s_prime = i
 					break 
-			self.proposals.union(set((s_prime, p)))
-			for i in replica_senders_to_leaders: 
+			self.proposals.add((s_prime, p))
+			for i in replica_senders_to_leaders:
 				replica_senders_to_leaders[i].send("propose " + str(s_prime) + " " + p + "\n")
 
 	def perform(p): 
@@ -242,6 +247,8 @@ class ReplicaSenderToLeader(Thread):
 				time.sleep(SLEEP)
 
 	def send(self, msg): 
+		if not msg.endswith('\n'):
+			msg += '\n'
 		try: 
 			self.sock.send(msg)
 		except Exception as e: 
@@ -254,11 +261,13 @@ class ReplicaSenderToLeader(Thread):
 				new_socket.bind((ADDR, self.port))
 				new_socket.connect((ADDR, self.target_port))
 				self.sock = new_socket
+				self.sock.send(msg)
 			except: 
 				time.sleep(SLEEP)
+		print "Replica {:d} sends to leader {:d} at port {:d}: {}".format(self.rid, self.lid, self.target_port, msg)
 
 def main(pid, num_servers, port):
-	print "starting main"
+	# print "starting main"
 	replica = Replica(pid, num_servers, port)
 	replica.start()
 
