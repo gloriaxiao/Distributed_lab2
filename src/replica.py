@@ -87,6 +87,7 @@ class Replica(Thread):
 			if '\n' in self.buffer:
 				(l, rest) = self.buffer.split("\n", 1)
 				(cmd, arguments) = l.split(" ", 1)
+				print "Replica {:d} receives msgs from master {}".format(self.pid, l)
 				if cmd == "get":
 					self.master_conn.send('chatLog {}\n'.format(state.toString()))
 				elif cmd == "msg": 
@@ -127,6 +128,17 @@ class Replica(Thread):
 							self.propose(p2)
 							break 
 					self.perform(p1)
+			else:
+				try:
+					data = self.master_conn.recv(1024)
+					if data == "":
+						raise ValueError
+					self.buffer += data 
+				except Exception as e:
+					print "Leader " + str(self.lid) + " lose connection to acceptor " + str(self.aid)
+					self.master_conn.close()
+					self.master_conn = None 
+					self.master_conn, self.master_addr = self.socket.accept()
 
 	def propose(self, p): 
 		found = False 
@@ -174,7 +186,7 @@ class ReplicaListenerToLeader(Thread):
 
 	def run(self): 
 		self.conn, self.addr = self.sock.accept()
-		print "replica " + str(self.rid) + " listen to leader " + str(self.lid) + " at port " + str(self.port)
+		# print "replica " + str(self.rid) + " listen to leader " + str(self.lid) + " at port " + str(self.port)
 		while True: 
 			if "\n" in self.buffer: 
 				(l, rest) = self.buffer.split("\n", 1)
@@ -191,8 +203,6 @@ class ReplicaListenerToLeader(Thread):
 						raise ValueError
 					self.buffer += data 
 				except Exception as e:
-					print "Error"
-					print sys.exc_info()[0]
 					print 'replica ' + str(self.rid) + " to leader " + str(self.lid) + " connection closed"
 					self.conn.close()
 					self.conn = None 
@@ -206,7 +216,7 @@ class ReplicaSenderToLeader(Thread):
 		self.lid = lid
 		self.target_port = LEADER_BASEPORT + 4 * lid * num_servers + rid 
 		self.port = BASEPORT + 2 * rid * num_servers + num_servers + lid
-		print "replica with port " +  str(self.port) + " connecting to leader " + str(self.lid) + " at port " + str(self.target_port)
+		# print "replica with port " +  str(self.port) + " connecting to leader " + str(self.lid) + " at port " + str(self.target_port)
 		self.connected = False
 
 	def run(self): 
@@ -218,8 +228,8 @@ class ReplicaSenderToLeader(Thread):
 				new_socket.connect((ADDR, self.target_port))
 				self.sock = new_socket
 				self.connected = True
-				print "replica " + str(rid) + " send to leader " + str(lid) + " at port " + str(self.target_port) + " from " + str(self.port)
-			except:
+				# print "replica " + str(self.rid) + " send to leader " + str(self.lid) + " at port " + str(self.target_port) + " from " + str(self.port)
+			except Exception as e:
 				time.sleep(SLEEP)
 
 	def send(self, msg): 

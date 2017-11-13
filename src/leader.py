@@ -211,7 +211,7 @@ class LeaderListenerToReplica(Thread):
 		global commander_threads, commander_conditions, ballot_num
 		self.conn, self.addr = self.sock.accept()
 		_ , port = self.addr
-		print "leader " + str(self.lid) + " listen to replica "  + str(self.rid) + ' with port ' + str(port) + " at port " + str(self.port)
+		# print "leader " + str(self.lid) + " listen to replica "  + str(self.rid) + ' with port ' + str(port) + " at port " + str(self.port)
 		while True: 
 			if "\n" in self.buffer: 
 				(l, rest) = self.buffer.split("\n", 1)
@@ -265,8 +265,8 @@ class LeaderSenderToReplica(Thread):
 				new_socket.connect((ADDR, self.target_port))
 				self.sock = new_socket
 				self.connected = True
-				print "leader " + str(lid) + " send to replica " + str(rid) + " at port " + str(self.target_port) + " from " + str(self.port)
-			except:
+				# print "leader " + str(self.lid) + " send to replica " + str(self.rid) + " at port " + str(self.target_port) + " from " + str(self.port)
+			except Exception as e:
 				time.sleep(SLEEP)
 
 	def send(self, msg): 
@@ -303,9 +303,7 @@ class LeaderListenerToAcceptor(Thread):
 	def run(self): 
 		global scout_response, commander_response, scout_conditions, commander_conditions
 		self.conn, self.addr = self.sock.accept()	
-		# addr, port = self.addr	
-		# print "leader " + str(self.lid) + " listen to acceptor " + str(self.aid) + " \nConnection: address = " + str(addr) + " port = " + str(port)
-		print "leader " + str(self.lid) + " listen to acceptor " + str(self.aid) + " at port " + str(self.port)
+		# print "leader " + str(self.lid) + " listen to acceptor " + str(self.aid) + " at port " + str(self.port)
 		while True:
 			if '\n' in self.buffer:
 				(l, rest) = self.buffer.split("\n", 1)
@@ -369,7 +367,7 @@ class LeaderSenderToAcceptor(Thread):
 				new_socket.connect((ADDR, self.target_port))
 				self.sock = new_socket
 				self.connected = True
-				print "leader " + str(lid) + " send to acceptor " + str(aid) + " at port " + str(self.target_port) + " from " + str(self.port)
+				# print "leader " + str(self.lid) + " send to acceptor " + str(self.aid) + " at port " + str(self.target_port) + " from " + str(self.port)
 			except:
 				time.sleep(SLEEP)
 
