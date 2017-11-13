@@ -54,33 +54,50 @@ class State:
 state = State() 
 
 class Replica(Thread):
-	def __init__(self, pid, num_servers, port):
+	def __init__(self, server, pid, num_servers):
 		Thread.__init__(self)
 		self.pid = pid
 		self.num_servers = num_servers
-		self.port = port
+		self.server = server
 		print "replica " + str(pid) + " at port " + str(port)
 		self.buffer = ""
-		for i in range(self.num_servers):
-			replica_listeners_to_leaders[i] = ReplicaListenerToLeader(pid, i, num_servers)
-			replica_listeners_to_leaders[i].start()
-		leader.init_leader_listeners(self.pid, num_servers)
-		acceptor.init_acceptor_listeners(self.pid, num_servers)
-		for i in range(self.num_servers): 
-			replica_senders_to_leaders[i] = ReplicaSenderToLeader(pid, i, num_servers) 
-			replica_senders_to_leaders[i].start()
-		leader.init_leader_senders(self.pid, num_servers)
-		acceptor.init_acceptor_senders(self.pid, num_servers)
-		leader.init_leader(pid, num_servers)
 		self.slot_number = 1 
 		self.proposals = set() 
 		self.decisions = set()
-		self.socket = socket(AF_INET, SOCK_STREAM)
-		self.socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-		self.socket.bind((ADDR, self.port))
-		self.socket.listen(1)
-		self.master_conn, self.master_addr = self.socket.accept()
-		self.connected = True
+
+	def run(self):
+		pass
+
+	def propose(self, p): 
+		found = False 
+		for t in self.decisions: 
+			(s, p_prime) = t 
+			if p == p_prime:
+				found = True 
+				break
+		print "not found a decision for proposal " + p
+		if not found: 
+			total_set = self.decisions.union(self.proposals)
+			all_slots_taken = [s for (s, p) in total_set]
+			print "current slots"
+			print all_slots_taken
+			if len(all_slots_taken) == 0: 
+				upper_bound = 2
+			else:
+				upper_bound = max(all_slots_taken) + 2 
+			s_prime = -1 
+			for i in range (1, upper_bound): 
+				if i not in all_slots_taken: 
+					s_prime = i
+					break 
+			self.proposals.add((s_prime, p))
+			for i in replica_senders_to_leaders:
+				replica_senders_to_leaders[i].send("propose " + str(s_prime) + " " + p + "\n")
+
+
+
+
+
 
 	def run(self):
 		global state 
@@ -137,32 +154,7 @@ class Replica(Thread):
 					self.master_conn = None 
 					self.master_conn, self.master_addr = self.socket.accept()
 
-	def propose(self, p): 
-		found = False 
-		for t in self.decisions: 
-			(s, p_prime) = t 
-			if p == p_prime:
-				found = True 
-				break
-		print "not found a decision for proposal " + p
-		if not found: 
-			total_set = self.decisions.union(self.proposals)
-			all_slots_taken = [s for (s, p) in total_set]
-			print "current slots"
-			print all_slots_taken
-			if len(all_slots_taken) == 0: 
-				upper_bound = 2
-			else:
-				upper_bound = max(all_slots_taken) + 2 
-			s_prime = -1 
-			for i in range (1, upper_bound): 
-				if i not in all_slots_taken: 
-					s_prime = i
-					break 
-			self.proposals.add((s_prime, p))
-			for i in replica_senders_to_leaders:
-				replica_senders_to_leaders[i].send("propose " + str(s_prime) + " " + p + "\n")
-
+	
 	def perform(p): 
 		cid, msg = p.split(" ", 1)
 		found = False 
