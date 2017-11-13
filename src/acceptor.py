@@ -16,12 +16,14 @@ ACCEPTED = []
 BALLOT_LOCK = Lock()
 ADDR = 'localhost'
 
-
-def init_acceptor(aid, num_leaders):
-	global listeners, clients
+def init_acceptor_listeners(aid, num_leaders):
+	global listeners
 	for i in range(num_leaders):
 		listeners[i] = AcceptorListener(aid, i, num_leaders)
 		listeners[i].start()
+
+def init_acceptor_senders(aid, num_leaders):
+	global clients
 	for i in range(num_leaders):
 		clients[i] = AcceptorClient(aid, i, num_leaders)
 		clients[i].start()
@@ -62,7 +64,6 @@ class AcceptorListener(Thread):
 		self.sock = socket(AF_INET, SOCK_STREAM)
 		self.sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 		self.port = BASEPORT + 2 * aid * num_leaders + lid 
-		print "acceptor " + str(aid) + " listen to leader " + str(lid) + " at port " + str(self.port)
 		self.sock.bind((ADDR, self.port))
 		self.sock.listen(1)
 		self.buffer = ''
@@ -70,6 +71,7 @@ class AcceptorListener(Thread):
 	def run(self):
 		global BALLOT_LOCK, BALLOT_NUM
 		self.conn, self.addr = self.sock.accept()
+		print "acceptor " + str(self.aid) + " listen to leader " + str(self.lid) + " at port " + str(self.port)
 		while True:
 			if '\n' in self.buffer:
 				(l, rest) = self.buffer.split("\n", 1)
@@ -108,11 +110,20 @@ class AcceptorClient(Thread):
 		self.target_port = LEADER_BASEPORT + 4 * lid * num_leaders + 2 * num_leaders + aid
 		newbase = BASEPORT + 2 * aid * num_leaders
 		self.port = newbase + num_leaders + lid
-		print "acceptor " + str(aid) + " send to leader " + str(lid) + " at port " + str(self.target_port) + " from " + str(self.port)
-		self.sock = None
+		self.connected = False
 
 	def run(self):
-		pass
+		while not self.connected:
+			try:
+				new_socket = socket(AF_INET, SOCK_STREAM)
+				new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+				new_socket.bind((ADDR, self.port))
+				new_socket.connect((ADDR, self.target_port))
+				self.sock = new_socket
+				self.connected = True
+				print "acceptor " + str(aid) + " send to leader " + str(lid) + " at port " + str(self.target_port) + " from " + str(self.port)
+			except:
+				time.sleep(SLEEP)
 
 	def send(self, msg):
 		if not msg.endswith('\n'):

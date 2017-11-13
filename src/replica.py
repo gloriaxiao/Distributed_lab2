@@ -64,9 +64,13 @@ class Replica(Thread):
 		for i in range(self.num_servers):
 			replica_listeners_to_leaders[i] = ReplicaListenerToLeader(pid, i, num_servers)
 			replica_listeners_to_leaders[i].start()
+		leader.init_leader_listeners(self.pid, num_servers)
+		acceptor.init_acceptor_listeners(self.pid, num_servers)
 		for i in range(self.num_servers): 
 			replica_senders_to_leaders[i] = ReplicaSenderToLeader(pid, i, num_servers) 
 			replica_senders_to_leaders[i].start()
+		leader.init_leader_senders(self.pid, num_servers)
+		acceptor.init_acceptor_senders(self.pid, num_servers)
 		self.slot_number = 1 
 		self.proposals = set() 
 		self.decisions = set()
@@ -155,6 +159,7 @@ class Replica(Thread):
 			self.slot_number += 1 
 			self.master_conn.send("ack " + str(cid) + " " + str(result) + "\n")
 
+
 class ReplicaListenerToLeader(Thread): 
 	def __init__(self, rid, lid, num_servers): 
 		Thread.__init__(self)
@@ -163,13 +168,13 @@ class ReplicaListenerToLeader(Thread):
 		self.sock = socket(AF_INET, SOCK_STREAM)
 		self.sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 		self.port = BASEPORT + 2 * rid * num_servers + lid 
-		print "replica " + str(rid) + " listen to leader " + str(lid) + " at port " + str(self.port)
 		self.sock.bind((ADDR, self.port))
 		self.sock.listen(1)
 		self.buffer = ''
 
 	def run(self): 
-		self.conn, self.addr = self.sock.accept() 
+		self.conn, self.addr = self.sock.accept()
+		print "replica " + str(self.rid) + " listen to leader " + str(self.lid) + " at port " + str(self.port)
 		while True: 
 			if "\n" in self.buffer: 
 				(l, rest) = self.buffer.split("\n", 1)
@@ -180,16 +185,19 @@ class ReplicaListenerToLeader(Thread):
 				else: 
 					print "invalid command in ReplicaListenerToLeader"
 			else: 
-				try: 
+				try:
 					data = self.conn.recv(1024)
-					if data == "": 
+					if data == "":
 						raise ValueError
 					self.buffer += data 
 				except Exception as e:
-					print str(self.rid) + " to " + str(self.lid) + " connection closed"
+					print "Error"
+					print sys.exc_info()[0]
+					print 'replica ' + str(self.rid) + " to leader " + str(self.lid) + " connection closed"
 					self.conn.close()
 					self.conn = None 
 					self.conn, self.addr = self.sock.accept()
+
 
 class ReplicaSenderToLeader(Thread): 
 	def __init__(self, rid, lid, num_servers): 
@@ -198,11 +206,21 @@ class ReplicaSenderToLeader(Thread):
 		self.lid = lid
 		self.target_port = LEADER_BASEPORT + 4 * lid * num_servers + rid 
 		self.port = BASEPORT + 2 * rid * num_servers + num_servers + lid
-		print "replica " + str(rid) + " send to leader " + str(lid) + " at port " + str(self.target_port) + " from " + str(self.port)
-		self.sock = None 
+		print "replica with port " +  str(self.port) + " connecting to leader " + str(self.lid) + " at port " + str(self.target_port)
+		self.connected = False
 
 	def run(self): 
-		pass 
+		while not self.connected:
+			try:
+				new_socket = socket(AF_INET, SOCK_STREAM)
+				new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+				new_socket.bind((ADDR, self.port))
+				new_socket.connect((ADDR, self.target_port))
+				self.sock = new_socket
+				self.connected = True
+				print "replica " + str(rid) + " send to leader " + str(lid) + " at port " + str(self.target_port) + " from " + str(self.port)
+			except:
+				time.sleep(SLEEP)
 
 	def send(self, msg): 
 		try: 
@@ -224,9 +242,6 @@ def main(pid, num_servers, port):
 	print "starting main"
 	replica = Replica(pid, num_servers, port)
 	replica.start()
-	for i in range(num_servers):
-		acceptor.init_acceptor(i, num_servers)
-		leader.init_leader(i, num_servers)
 
 
 if __name__ == "__main__":

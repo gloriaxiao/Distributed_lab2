@@ -52,6 +52,26 @@ def not_empty(l, lock):
 	return (length != 0)
 
 
+def init_leader_listeners(lid, num_servers):
+	global listener_to_replicas, listener_to_acceptors 
+	for i in range(num_servers):
+		listener_to_replicas[i] = LeaderListenerToReplica(lid, i, num_servers)
+		listener_to_replicas[i].start()
+	for i in range(num_servers):
+		listener_to_acceptors[i] = LeaderListenerToAcceptor(lid, i, num_servers)
+		listener_to_acceptors[i].start()
+
+
+def init_leader_senders(lid, num_servers):
+	global sender_to_replicas, sender_to_acceptors
+	for i in range(num_servers):
+		sender_to_replicas[i] = LeaderSenderToReplica(lid, i, num_servers)
+		sender_to_replicas[i].start()
+	for i in range(num_servers):
+		sender_to_acceptors[i] = LeaderSenderToAcceptor(lid, i, num_servers)
+		sender_to_acceptors[i].start()
+
+
 def init_leader(lid, num_servers):
 	global leader_thread
 	leader_thread = Thread(target=leader,args=(lid, num_servers))
@@ -59,22 +79,9 @@ def init_leader(lid, num_servers):
 
 
 def leader(lid, num_servers):
-	global listener_to_replicas, sender_to_replicas, listener_to_acceptors, sender_to_acceptors 
 	global scout_threads, NUM_SERVERS, scout_conditions, ballot_num
 	global adopted_lock, adopted_msgs, preempted_lock, preempted_msgs, active
-	NUM_SERVERS = num_servers
-	for i in range(num_servers):
-		listener_to_replicas[i] = LeaderListenerToReplica(lid, i, num_servers)
-		listener_to_replicas[i].start()
-	for i in range(num_servers):
-		sender_to_replicas[i] = LeaderSenderToReplica(lid, i, num_servers)
-		sender_to_replicas[i].start()
-	for i in range(num_servers):
-		listener_to_acceptors[i] = LeaderListenerToAcceptor(lid, i, num_servers)
-		listener_to_acceptors[i].start()
-	for i in range(num_servers):
-		sender_to_acceptors[i] = LeaderSenderToAcceptor(lid, i, num_servers)
-		sender_to_acceptors[i].start()
+	NUM_SERVERS = num_servers	
 	cv = Condition()
 	scout_thread = Thread(target=Scout, args=(ballot_num, cv))
 	scout_thread.start()
@@ -196,14 +203,15 @@ class LeaderListenerToReplica(Thread):
 		self.sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 		baseport = LEADER_BASEPORT + 4 * lid * num_servers
 		self.port = baseport + self.rid 
-		print "leader " + str(lid) + " listen to replica " + str(rid) + " at port " + str(self.port)
 		self.sock.bind((ADDR, self.port))
 		self.sock.listen(1)
 		self.buffer = ''
 
 	def run(self):
 		global commander_threads, commander_conditions, ballot_num
-		self.conn, self.addr = self.sock.accept() 
+		self.conn, self.addr = self.sock.accept()
+		_ , port = self.addr
+		print "leader " + str(self.lid) + " listen to replica "  + str(self.rid) + ' with port ' + str(port) + " at port " + str(self.port)
 		while True: 
 			if "\n" in self.buffer: 
 				(l, rest) = self.buffer.split("\n", 1)
@@ -246,11 +254,20 @@ class LeaderSenderToReplica(Thread):
 		self.rid = rid
 		self.target_port = BASEPORT + 2 * rid * num_servers + lid 
 		self.port = LEADER_BASEPORT + 4 * lid * num_servers + num_servers + rid
-		print "leader " + str(lid) + " send to replica " + str(rid) + " at port " + str(self.target_port) + " from " + str(self.port)
-		self.sock = None 
+		self.connected = False
 
-	def run(self): 
-		pass 
+	def run(self):
+		while not self.connected:
+			try:
+				new_socket = socket(AF_INET, SOCK_STREAM)
+				new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+				new_socket.bind((ADDR, self.port))
+				new_socket.connect((ADDR, self.target_port))
+				self.sock = new_socket
+				self.connected = True
+				print "leader " + str(lid) + " send to replica " + str(rid) + " at port " + str(self.target_port) + " from " + str(self.port)
+			except:
+				time.sleep(SLEEP)
 
 	def send(self, msg): 
 		try: 
@@ -262,6 +279,7 @@ class LeaderSenderToReplica(Thread):
 			try: 
 				new_socket = socket(AF_INET, SOCK_STREAM)
 				new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+				new_socket.bind((ADDR, self.port))
 				new_socket.connect((ADDR, self.target_port))
 				self.sock = new_socket
 			except: 
@@ -275,7 +293,6 @@ class LeaderListenerToAcceptor(Thread):
 		self.aid = aid
 		self.num_accpeters = num_servers
 		self.port = LEADER_BASEPORT + 4 * lid * num_servers + 2 * num_servers + aid
-		print "leader " + str(lid) + " listen to acceptor " + str(aid) + " at port " + str(self.port)
 		self.sock = socket(AF_INET, SOCK_STREAM)
 		self.sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 		self.sock.bind((ADDR, self.port))
@@ -285,7 +302,10 @@ class LeaderListenerToAcceptor(Thread):
 
 	def run(self): 
 		global scout_response, commander_response, scout_conditions, commander_conditions
-		self.conn, self.addr = self.sock.accept()
+		self.conn, self.addr = self.sock.accept()	
+		# addr, port = self.addr	
+		# print "leader " + str(self.lid) + " listen to acceptor " + str(self.aid) + " \nConnection: address = " + str(addr) + " port = " + str(port)
+		print "leader " + str(self.lid) + " listen to acceptor " + str(self.aid) + " at port " + str(self.port)
 		while True:
 			if '\n' in self.buffer:
 				(l, rest) = self.buffer.split("\n", 1)
@@ -324,7 +344,7 @@ class LeaderListenerToAcceptor(Thread):
 						raise ValueError
 					self.buffer += data 
 				except Exception as e:
-					print str(self.aid) + " lose connection to leader " + str(self.lid)
+					print "Leader " + str(self.lid) + " lose connection to acceptor " + str(self.aid)
 					self.conn.close()
 					self.conn = None 
 					self.conn, self.addr = self.sock.accept()
@@ -338,11 +358,20 @@ class LeaderSenderToAcceptor(Thread):
 		self.num_accpeters = num_servers
 		self.target_port = ACCEPTER_BASEPORT + 2 * aid * num_servers + lid
 		self.port = LEADER_BASEPORT + 4 * lid * num_servers + 3 * num_servers + aid
-		print "leader " + str(lid) + " send to acceptor " + str(aid) + " at port " + str(self.target_port) + " from " + str(self.port)
-		self.sock = None
+		self.connected = False
 
 	def run(self): 
-		pass 
+		while not self.connected:
+			try:
+				new_socket = socket(AF_INET, SOCK_STREAM)
+				new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+				new_socket.bind((ADDR, self.port))
+				new_socket.connect((ADDR, self.target_port))
+				self.sock = new_socket
+				self.connected = True
+				print "leader " + str(lid) + " send to acceptor " + str(aid) + " at port " + str(self.target_port) + " from " + str(self.port)
+			except:
+				time.sleep(SLEEP)
 
 	def send(self, msg): 
 		if not msg.endswith('\n'):
