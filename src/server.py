@@ -2,7 +2,7 @@
 import sys
 from socket import AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR, socket, error
 import time
-import os
+import os, errno
 from threading import Thread, Lock
 from new_leader import Leader
 from new_acceptor import Acceptor
@@ -33,7 +33,6 @@ class State:
 
 state = State()
 
-
 class Replica(Thread):
 	def __init__(self, pid, num_servers, port):
 		global listeners, clients
@@ -48,11 +47,11 @@ class Replica(Thread):
 		self.decisions = set()
 		for i in range(num_servers):
 			if i != pid:
-				listeners[i] = ServerListener(pid, i)
+				listeners[i] = ServerListener(pid, i, num_servers)
 				listeners[i].start()
 		for i in range(num_servers): 
 			if (i != pid): 
-				clients[i] = ServerClient(pid, i) 
+				clients[i] = ServerClient(pid, i, num_servers) 
 				clients[i].start()
 		self.socket = socket(AF_INET, SOCK_STREAM)
 		self.socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
@@ -60,16 +59,11 @@ class Replica(Thread):
 		self.socket.listen(1)
 		self.master_conn, self.master_addr = self.socket.accept()
 		self.connected = True
-		# self.initialized = False 
 
 	def run(self):
 		global state
-		# print "running"
 		while self.connected:
 			if '\n' in self.buffer:
-				# print "first if"
-				# if not self.initialized: 
-				# 	leader.init_leader(self.pid, self.num_servers)
 				(l, rest) = self.buffer.split("\n", 1)
 				self.buffer = rest
 				(cmd, arguments) = l.split(" ", 1)
@@ -101,10 +95,6 @@ class Replica(Thread):
 					self.master_conn, self.master_addr = self.socket.accept()
 
 	def decide(self, arguments): 
-		# global decision_lock, decision_msgs
-		# decision_lock.acquire() 
-		# arguments = decision_msgs[0]
-		# decision_msgs = decision_msgs[1:]
 		s, p = arguments.split(" ", 1)
 		self.decisions.add((s, p))
 		print "leader: " + str(self.pid) + " self.decisions: " + str(self.decisions)		
@@ -192,7 +182,7 @@ class ServerListener(Thread):
 		self.target_pid = target_pid
 		self.sock = socket(AF_INET, SOCK_STREAM)
 		self.sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-		self.port = BASEPORT + 2 * pid * num_servers + target_pid
+		self.port = 29999 - pid * 100 - target_pid 
 		self.sock.bind((ADDR, self.port))
 		self.sock.listen(1)
 		self.buffer = ''
@@ -237,19 +227,19 @@ class ServerListener(Thread):
 
 
 class ServerClient(Thread):
-	def __init__(self, pid, target_pid):
+	def __init__(self, pid, target_pid, num_servers):
 	  	Thread.__init__(self)
 	  	self.pid = pid
 	  	self.target_pid = target_pid 
-	  	self.target_port = BASEPORT + 2*target_pid*num_servers + pid
-	  	self.port = BASEPORT + 2 * pid * num_servers + num_servers + target_pid
+	  	self.num_servers = num_servers
+	  	self.target_port = 29999 - target_pid * 100 - pid
+	  	self.port = 29999 - 100 * pid - num_servers - target_pid
 	  	self.sock = None
 	  	self.connected = False
 
 	def run(self):
 		while not self.connected:
 			try:
-
 				new_socket = socket(AF_INET, SOCK_STREAM)
 				new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 				new_socket.bind((ADDR, self.port))
@@ -271,14 +261,14 @@ class ServerClient(Thread):
 	  			self.sock = None
 	  		try:
 	  			new_socket = socket(AF_INET, SOCK_STREAM)
-				new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-				new_socket.connect((ADDR, self.target_port))
-				self.sock = new_socket
-				self.sock.send(msg)
-			except:
-				time.sleep(SLEEP)
+	  			new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+	  			new_socket.connect((ADDR, self.target_port))
+	  			self.sock = new_socket
+	  			self.sock.send(msg)
+	  		except:
+	  			time.sleep(SLEEP)
 
-  def kill(self):
+	def kill(self):
 		try:
 			self.sock.close()
 		except:

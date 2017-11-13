@@ -1,4 +1,4 @@
 #!/bin/sh
-source=src/replica.py
+source=src/server.py
 chmod +x $source
 python $source $1 $2 $3
