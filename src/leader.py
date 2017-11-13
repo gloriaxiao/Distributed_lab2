@@ -17,15 +17,15 @@ listener_to_acceptors = {}
 sender_to_acceptors = {}
 
 leader_thread = None
-scout_threads = {}
-scout_conditions = {}
+scout_thread = None
+scout_condition = None
+scout_response = ""
+
 commander_threads = {}
 commander_conditions = {}
-scout_response = {}
 commander_response = {}
 
-adopted_msgs = []
-adopted_lock = Lock() 
+adopted_msg = ""
 preempted_msgs = []
 preempted_lock = Lock()
 
@@ -38,9 +38,6 @@ def append_to_list(lst, lock, msg):
 	lock.acquire() 
 	lst.append(msgs)
 	lock.release()
-
-def send_adopted_to_leader(b, pvalues): 
-	append_to_list(adopted_msgs, adopted_lock, (b, pvalues)) 
 
 def send_preempted_to_leader(b): 
 	append_to_list(preempted_msgs, preempted_lock, b) 
@@ -79,49 +76,46 @@ def init_leader(lid, num_servers):
 
 
 def leader(lid, num_servers):
-	global scout_threads, NUM_SERVERS, scout_conditions, ballot_num
-	global adopted_lock, adopted_msgs, preempted_lock, preempted_msgs, active
+	global scout_thread, NUM_SERVERS, scout_condition, ballot_num
+	global adopted_msg, preempted_lock, preempted_msgs, active
 	NUM_SERVERS = num_servers	
-	cv = Condition()
-	scout_thread = Thread(target=Scout, args=(ballot_num, cv))
+	scout_condition = Condition()
+	scout_thread = Thread(target=Scout, args=(ballot_num))
 	scout_thread.start()
-	scout_threads[ballot_num] = scout_thread
-	scout_conditions[ballot_num] = cv
 	while True:
-		if(not_empty(adopted_msgs, adopted_lock)):
-			adopted_lock.acquire()
-			for m in adopted_msgs:
-				b, pvals = m
-				b = int(b)
-				pmax_dictionary = {} 
-				for pvalue in pvals:
-					b_first, s, p = pvals.split()
-					b_first = int(b_first)
-					s = int(s)
-					if s not in pmax: 
-						pmax[s] = b_first, s, p 
-					else:
-						b_prime, s_prime, p_prime = pmax[s]
-						if b_prime < b_first: 
-							pmax[s] = b_first, s, p
-				pmax = [(s, p) for (b, s, p) in pmax_dictionary.values()]
-				new_proposals = set(pmax)
-				for (s, p) in proposals: 
-					found = False 
-					for (s_prime, p_prime) in pmax: 
-						if s == s_prime and p_prime != p: 
-							found = True 
-							break 
-					if not found: 
-						new_proposals.add((s, p))
-				proposals = new_proposals
-				for (s, p) in proposals: 
-					cv = commander_conditions.get((b,s), Condition())
-					commander_conditions[(b,s)] = cv
-					newc = Thread(target=Commander, args=(b, s, p, cv))
-					commander_threads[(b, s)] = newc
-					active = True
-					newc.start()
+		if(adopted_msg):
+			b, pvals = adopted_msg
+			adopted_msg = ""
+			b = int(b)
+			pmax_dictionary = {} 
+			for pvalue in pvals:
+				b_first, s, p = pvals.split()
+				b_first = int(b_first)
+				s = int(s)
+				if s not in pmax: 
+					pmax[s] = b_first, s, p 
+				else:
+					b_prime, s_prime, p_prime = pmax[s]
+					if b_prime < b_first: 
+						pmax[s] = b_first, s, p
+			pmax = [(s, p) for (b, s, p) in pmax_dictionary.values()]
+			new_proposals = set(pmax)
+			for (s, p) in proposals: 
+				found = False 
+				for (s_prime, p_prime) in pmax: 
+					if s == s_prime and p_prime != p: 
+						found = True 
+						break 
+				if not found: 
+					new_proposals.add((s, p))
+			proposals = new_proposals
+			for (s, p) in proposals: 
+				cv = commander_conditions.get((b,s), Condition())
+				commander_conditions[(b,s)] = cv
+				newc = Thread(target=Commander, args=(b, s, p, cv))
+				commander_threads[(b, s)] = newc
+				active = True
+				newc.start()
 		elif(not_empty(preempted_msgs, preempted_lock)):
 			preempted_lock.acquire()
 			for b in preempted_msgs:
@@ -139,33 +133,31 @@ def leader(lid, num_servers):
 			time.sleep(SLEEP)
 
 
-def Scout(b, cv):
-	global NUM_SERVERS, scout_response, sender_to_acceptors
+def Scout(b):
+	global NUM_SERVERS, scout_response, sender_to_acceptors, scout_condition
+	global adopted_msg
 	waitfor = set(listener_to_acceptors.keys()) 
 	pvalues = set() 
 	for i in sender_to_acceptors: 
 		sender_to_acceptors[i].send("p1a " + str(b))
 	pvalues = set()
 	while True:
-		with cv:
-			while (not scout_response.get(b, [])):
-				cv.wait()
-			responses = scout_response[b]
-			for r in responses:
-				aid, b_num, p_vals = r
-				if b_num == b:
-					waitfor.remove(aid)
-					pvalues.update(p_vals)
-					if len(waitfor < NUM_SERVERS/2):
-						entry = b, pvalues
-						send_adopted_to_leader(entry)
-						scout_response[b] = []
-						return
-				else:
-					scout_response[b] = []
-					send_preempted_to_leader(b_num)
+		with scout_condition:
+			while not scout_response:
+				scout_condition.wait()
+			r = scout_response
+			scout_response = ""
+			aid, b_num, p_vals = r
+			if b_num == b:
+				waitfor.remove(aid)
+				pvalues.update(p_vals)
+				if len(waitfor < NUM_SERVERS/2):
+					entry = b, pvalues
+					adopted_msg = entry
 					return
-			scout_response[b] = []
+			else:
+				send_preempted_to_leader(b_num)
+				return
 
 
 def Commander(b, s, p, cv):
@@ -208,9 +200,8 @@ class LeaderListenerToReplica(Thread):
 		self.buffer = ''
 
 	def run(self):
-		global commander_threads, commander_conditions, ballot_num
+		global commander_threads, commander_conditions, ballot_num, proposals
 		self.conn, self.addr = self.sock.accept()
-		_ , port = self.addr
 		# print "leader " + str(self.lid) + " listen to replica "  + str(self.rid) + ' with port ' + str(port) + " at port " + str(self.port)
 		while True: 
 			if "\n" in self.buffer: 
@@ -220,12 +211,13 @@ class LeaderListenerToReplica(Thread):
 				if cmd == "propose": 
 					s, p = arguments.split(" ", 1)
 					found = False 
-					for (s_prime, p_prime) in proposals: 
+					for t in proposals:
+						s_prime, p_prime = t
 						if s == s_prime: 
 							found = True 
-							break 
+							break
 					if not found: 
-						proposals = proposals.union(set((s, p)))
+						proposals = proposals.add((s, p))
 						if active:
 							cv = Condition()
 							newc = Thread(target=Commander, args=(ballot_num, s, p, cv))
