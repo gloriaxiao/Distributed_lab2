@@ -188,7 +188,7 @@ class ServerListener(Thread):
 		self.buffer = ''
 
 	def run(self):
-		global leader, acceptor
+		global leader, acceptor, replica
 		self.conn, self.addr = self.sock.accept()
 		print "Server " + str(self.pid) + " listen to Server " + str(self.target_pid) + " at port " + str(self.port)
 		while True:
@@ -208,12 +208,10 @@ class ServerListener(Thread):
 					acceptor.process_p2a(self.target_pid, info)
 				elif cmd == 'decision':
 					print "Server " + str(self.pid) + " received decision from leader " + str(self.target_pid)
-					# append_to_list(decision_msgs, decision_lock, arguments)
-					global replica 
 					replica.decide(info)
 				else: 
 					print "invalid command in ReplicaListenerToLeader"
-			else: 
+			else:
 				try:
 					data = self.conn.recv(1024)
 					if data == "":
@@ -235,17 +233,15 @@ class ServerClient(Thread):
 	  	self.target_port = 29999 - target_pid * 100 - pid
 	  	self.port = 29999 - 100 * pid - num_servers - target_pid
 	  	self.sock = None
-	  	self.connected = False
 
 	def run(self):
-		while not self.connected:
+		while not self.sock:
 			try:
 				new_socket = socket(AF_INET, SOCK_STREAM)
 				new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 				new_socket.bind((ADDR, self.port))
 				new_socket.connect((ADDR, self.target_port))
 				self.sock = new_socket
-				self.connected = True
 				print "State " + str(self.pid) + " sender to State " + str(self.target_pid) + " at port " + str(self.target_port) + " from " + str(self.port)
 			except Exception as e:
 				time.sleep(SLEEP)
