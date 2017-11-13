@@ -3,7 +3,7 @@ import sys
 from socket import AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR, socket, error
 import time
 from threading import Lock, Thread
-
+from pvalue import Pvalue
 
 listeners = {}
 clients = {}
@@ -43,19 +43,9 @@ def state_repr():
 	global BALLOT_NUM, ACCEPTED
 	BALLOT_LOCK.acquire()
 	accept_strs = [str(v) for v in ACCEPTED]
-	output = '{:d} {}'.format(BALLOT_NUM, ' '.join(accept_strs))
+	output = '{:d} {}'.format(BALLOT_NUM, ';'.join(accept_strs))
 	BALLOT_LOCK.release()
 	return output
-
-
-class Pvalue:
-	def __init__(self, ballot_num, slot_num, c):
-		self.ballot = ballot_num
-		self.slot = slot_num
-		self.command = c
-
-	def __str__(self):
-		return "{:d} {:d} {}".format(self.ballot, self.slot, self.command)
 
 # only adopt strictly increasing ballot numbers
 # add <b,s,p> to accepted if b == ballot_num
@@ -71,7 +61,7 @@ class AccepterListener(Thread):
 		self.num_leaders = num_leaders
 		self.sock = socket(AF_INET, SOCK_STREAM)
 		self.sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-		self.port = BASEPORT + aid * num_leaders + lid 
+		self.port = BASEPORT + 2 * aid * num_leaders + lid 
 		self.sock.bind((ADDR, self.port))
 		self.sock.listen(1)
 		self.buffer = ''
@@ -85,16 +75,16 @@ class AccepterListener(Thread):
 				self.buffer = rest
 				msgs = l.split()
 				if msgs[0] == 'p1a':
-					num = int(msgs[1])*num_leaders + lid
+					num = int(msgs[1])*num_leaders + self.lid
 					update_ballot_num('p1a', num)
-					clients[self.lid].send('p1b ' + state_repr())
+					clients[self.lid].send('p1b ' + str(num) + ' ' + state_repr())
 				elif msgs[0] == 'p2a':
 					b_num, s_num, proposal = msgs[1:-1]
-					b_num = int(b_num)*num_leaders + lid
+					b_num = int(b_num)*num_leaders + self.lid
 					v = Pvalue(b_num, int(s_num), proposal)
 					update_ballot_num('p2a', b_num, v)
 					BALLOT_LOCK.acquire()
-					clients[self.lid].send('p2b ' + str(BALLOT_NUM))
+					clients[self.lid].send('p2b ' + str(b_num) + ' ' + str(BALLOT_NUM))
 					BALLOT_LOCK.release()
 			else:
 				try:
@@ -114,8 +104,8 @@ class AccepterClient(Thread):
 		Thread.__init__(self)
 		self.aid = aid
 		self.lid = lid
-		self.target_port = LEADER_BASEPORT + lid*num_leaders + aid
-		newbase = BASEPORT + 2*aid*num_leaders
+		self.target_port = LEADER_BASEPORT + 4 * lid * num_leaders + 2 * num_leaders + aid
+		newbase = BASEPORT + 2 * aid * num_leaders
 		self.port = newbase + num_leaders + lid
 		self.sock = None
 

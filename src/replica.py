@@ -9,6 +9,7 @@ SLEEP = 0.05
 ADDR = 'localhost'
 MAXPORT = 22499
 BASEPORT = 20000
+LEADER_BASEPORT = 25000
 
 replica_listeners_to_leaders = {}
 replica_senders_to_leaders = {}
@@ -152,13 +153,13 @@ class Replica(Thread):
 			self.master_conn.send("ack " + str(cid) + " " + str(result) + "\n")
 
 class ReplicaListenerToLeader(Thread): 
-	def __init__(self, pid, target_pid, num_servers): 
+	def __init__(self, rid, lid, num_servers): 
 		Thread.__init__(self)
-		self.pid = pid 
-		self.target_pid = target_pid 
+		self.rid = rid
+		self.lid = lid 
 		self.sock = socket(AF_INET, SOCK_STREAM)
 		self.sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-		self.port = BASEPORT + pid * num_servers + target_pid 
+		self.port = BASEPORT + 2 * rid * num_servers + lid 
 		self.sock.bind((ADDR, self.port))
 		self.sock.listen(1)
 		self.buffer = ''
@@ -181,18 +182,18 @@ class ReplicaListenerToLeader(Thread):
 						raise ValueError
 					self.buffer += data 
 				except Exception as e:
-					print str(self_pid) + " to " + str(self.target_pid) + " connection closed"
+					print str(self.rid) + " to " + str(self.lid) + " connection closed"
 					self.conn.close()
 					self.conn = None 
 					self.conn, self.addr = self.sock.accept()
 
 class ReplicaSenderToLeader(Thread): 
-	def __init__(self, pid, target_pid, num_servers): 
+	def __init__(self, rid, lid, num_servers): 
 		Thread.__init__(self)
-		self.pid = pid 
-		self.target_pid = target_pid
-		self.target_port = BASEPORT + target_pid * num_servers + pid 
-		self.port = BASEPORT + pid * num_servers + num_servers + target_pid
+		self.rid = rid 
+		self.lid = lid
+		self.target_port = LEADER_BASEPORT + 4 * lid * num_servers + rid 
+		self.port = BASEPORT + 2 * rid * num_servers + num_servers + lid
 		self.sock = None 
 
 	def run(self): 
@@ -208,6 +209,7 @@ class ReplicaSenderToLeader(Thread):
 			try: 
 				new_socket = socket(AF_INET, SOCK_STREAM)
 				new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+				new_socket.bind((ADDR, self.port))
 				new_socket.connect((ADDR, self.target_port))
 				self.sock = new_socket
 			except: 

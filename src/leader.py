@@ -1,47 +1,43 @@
 #!/usr/bin/env python
+from pvalue import Pvalue
 import sys
 from socket import AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR, socket, error
 import time
-from threading import Lock, Thread
+from threading import Lock, Thread, Condition
 
 LEADER_BASEPORT = 25000
+ACCEPTER_BASEPORT = 22500
+BASEPORT = 20000
 SLEEP = 0.05
 ADDR = 'localhost'
+NUM_SERVERS = 0
 listener_to_replicas = {}
 sender_to_replicas = {}
 listener_to_acceptors = {}
 sender_to_acceptors = {}
 
-p1b_msgs = []
-p1b_lock = Lock() 
-p2b_msgs = [] 
-p2b_lock = Lock() 
-adopted_msgs = [] 
+leader_thread = None
+scout_threads = {}
+scout_conditions = {}
+commander_threads = {}
+commander_conditions = {}
+scout_response = {}
+commander_response = {}
+
+adopted_msgs = []
 adopted_lock = Lock() 
-preempted_msgs = [] 
+preempted_msgs = []
 preempted_lock = Lock()
 
 ballet_num = 0 
 active = False 
 proposals = set() 
 
+
 def append_to_list(lst, lock, msg): 
 	lock.acquire() 
-	lst.append(msg)
+	lst.append(msgs)
 	lock.release()
-
-def pop_head_list(lst, lock): 
-	lock.acquire()
-	head = lst[0]
-	lst = lst[1:]
-	lock.release()
-	return head 
-
-def len_list(lst, lock): 
-	lock.acquire()
-	length = len(lst)
-	lock.release()
-	return length
 
 def send_adopted_to_leader(b, pvalues): 
 	append_to_list(adopted_msgs, adopted_lock, (b, pvalues)) 
@@ -49,44 +45,24 @@ def send_adopted_to_leader(b, pvalues):
 def send_preempted_to_leader(b): 
 	append_to_list(preempted_msgs, preempted_lock, b) 
 
-def spawnScout(b): 
-	waitfor = set(listener_to_acceptors.keys()) 
-	pvalues = set() 
-	for i in sender_to_acceptors: 
-		sender_to_acceptors[i].send("p1a " + str(ballot_number))
-	while True: 
-		if len_list(p1b_msgs, p1b_lock) != 0: 
-			alpha, msg = pop_head_list(p1b_msgs, p1b_lock)
-			b_prime, r = msg.split(" ", 1)
-			if b == b_prime: 
-				pvalues = pvalues.union(r)
-				set.discard(alpha)
-				if len(waitfor) < max_num_servers / 2: 
-					send_adopted_to_leader(b, pvalues)
-					return 
-			else: 
-				send_preempted_to_leader(b_prime)
-				return
+def not_empty(l, lock):
+	lock.acquire()
+	length = len(l)
+	lock.release()
+	return (length != 0)
 
-def spawnCommander(b, s, p): 
-	waitfor = set(listener_to_acceptors.keys()) 
-	for i in sender_to_acceptors: 
-		sender_to_acceptors[i].send("p2a " + str(ballot_number) + " " + str(s) + " " + str(p))
-	while True: 
-		if len_list(p2b_msgs, p2b_lock) != 0: 
-			alpha, b = pop_head_list(p2b_msgs, p2b_lock)
-			if b_prime != b: 
-				waitfor.discard(alpha)
-				if len(waitfor) < len(max_num_servers) < 2: 
-					for i in sender_to_replicas: 
-						sender_to_replicas[i].send("decision " + str(s) + " " + str(p))
-						return 
-			else: 
-				send_preempted_to_leader(b_prime)
-				return
 
-def init_leader(lid, num_servers):
+def main(lid, num_servers):
+	global leader_thread
+	leader_thread = Thread(target=leader,args=(lid, num_servers))
+	leader_thread.start()
+
+
+def leader(lid, num_servers):
 	global listener_to_replicas, sender_to_replicas, listener_to_acceptors, sender_to_acceptors 
+	global scout_threads, NUM_SERVERS, scout_conditions, ballet_num
+	global adopted_lock, adopted_msgs, preempted_lock, preempted_msgs, active
+	NUM_SERVERS = num_servers
 	for i in range(num_servers):
 		listener_to_replicas[i] = LeaderListenerToReplica(lid, i, num_servers)
 		listener_to_replicas[i].start()
@@ -99,21 +75,134 @@ def init_leader(lid, num_servers):
 	for i in range(num_leaders):
 		sender_to_acceptors[i] = LeaderSenderToAcceptor(lid, i, num_servers)
 		sender_to_acceptors[i].start()
-	spawnScout(ballot_number)
+	cv = Condition()
+	scout_thread = Thread(target=Scout, args=(ballot_number, cv))
+	scout_thread.start()
+	scout_threads[ballot_number] = scout_thread
+	scout_conditions[ballot_number] = cv
+	while True:
+		if(not_empty(adopted_msgs, adopted_lock)):
+			adopted_lock.acquire()
+			for m in adopted_msgs:
+				b, pvals = m
+				b = int(b)
+				pmax_dictionary = {} 
+				for pvalue in pvals:
+					b_first, s, p = pvals.split()
+					b_first = int(b_first)
+					s = int(s)
+					# s, p = s_and_p.split(, 1)
+					if s not in pmax: 
+						pmax[s] = b_first, s, p 
+					else:
+						b_prime, s_prime, p_prime = pmax[s]
+						if b_prime < b_first: 
+							pmax[s] = b_first, s, p
+				pmax = [(s, p) for (b, s, p) in pmax_dictionary.values()]
+				new_proposals = set(pmax)
+				for (s, p) in proposals: 
+					found = False 
+					for (s_prime, p_prime) in pmax: 
+						if s == s_prime and p_prime != p: 
+							found = True 
+							break 
+					if not found: 
+						new_proposals.add((s, p))
+				proposals = new_proposals
+				for (s, p) in proposals: 
+					cv = commander_conditions.get((b,s), Condition())
+					commander_conditions[(b,s)] = cv
+					newc = Thread(target=Commander, args=(b, s, p, cv))
+					commander_threads[(b, s)] = newc
+					active = True
+					newc.start()
+		elif(not_empty(preempted_msgs, preempted_lock)):
+			preempted_lock.acquire()
+			for b in preempted_msgs:
+				if b > ballet_num:
+					active = False
+					ballet_num = (b/NUM_SERVERS + 1)*NUM_SERVERS + lid
+					cv = scout_conditions.get(ballot_num, Condition())
+					scout_conditions[ballot_num] = cv
+					scout_thread = Thread(target=Scout, args=(ballot_num, cv))
+					scout_thread.start()
+					scout_threads[ballot_num] = scout_thread
+			preempted_msgs = []
+			preempted_lock.release()
+		else:
+			time.sleep(SLEEP)
+
+
+def Scout(b, cv):
+	global NUM_SERVERS, scout_response
+	waitfor = set(listener_to_acceptors.keys()) 
+	pvalues = set() 
+	for i in sender_to_acceptors: 
+		sender_to_acceptors[i].send("p1a " + str(ballot_number))
+	pvalues = set()
+	while True:
+		with cv:
+			while (not scout_response.get(b, [])):
+				cv.wait()
+			responses = scout_response[b]
+			for r in responses:
+				aid, b_num, p_vals = r
+				if b_num == b:
+					waitfor.remove(aid)
+					pvalues.update(p_vals)
+					if len(waitfor < NUM_SERVERS/2):
+						entry = b, pvalues
+						send_adopted_to_leader(entry)
+						scout_response[b] = []
+						return
+				else:
+					scout_response[b] = []
+					send_preempted_to_leader(b_num)
+					return
+			scout_response[b] = []
+
+
+def Commander(b, s, p, cv):
+	global commander_response
+	waitfor = set(listener_to_acceptors.keys()) 
+	for i in sender_to_acceptors: 
+		sender_to_acceptors[i].send("p2a {} {} {}".format(str(ballot_number), str(s), str(p)))
+	while True:
+		with cv:
+			while (not commander_response.get(b, [])):
+				cv.wait()
+			responses = commander_response[b]
+			for r in responses:
+				aid, b_num = r
+				if b_num == b:
+					waitfor.remove(aid)
+					if len(waitfor < NUM_SERVERS/2):
+						for i in LeaderSenderToReplica:
+							LeaderSenderToReplica[i].send("decision {} {}".format(str(s), str(p)))
+						commander_response[b] = []
+						return
+				else:
+					commander_response[b] = []
+					send_preempted_to_leader(b_num)
+					return
+			commander_response[b] = []
+
 
 class LeaderListenerToReplica(Thread): 
-	def __init__(self, pid, target_pid, num_servers): 
+	def __init__(self, lid, rid, num_servers): 
 		Thread.__init__(self)
-		self.pid = pid 
-		self.target_pid = target_pid 
+		self.lid = lid 
+		self.rid = rid 
 		self.sock = socket(AF_INET, SOCK_STREAM)
 		self.sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-		self.port = LEADER_BASEPORT + pid * num_servers + target_pid 
+		baseport = LEADER_BASEPORT + 4 * lid * num_servers
+		self.port = baseport + self.rid 
 		self.sock.bind((ADDR, self.port))
 		self.sock.listen(1)
 		self.buffer = ''
 
-	def run(self): 
+	def run(self):
+		global commander_threads, commander_conditions
 		self.conn, self.addr = self.sock.accept() 
 		while True: 
 			if "\n" in self.buffer: 
@@ -129,8 +218,12 @@ class LeaderListenerToReplica(Thread):
 							break 
 					if not found: 
 						proposals = proposals.union(set((s, p)))
-						if active: 
-							spawnCommander(ballot_number, s, p)
+						if active:
+							cv = Condition()
+							newc = Thread(target=Commander, args=(ballot_number, s, p, cv))
+							commander_threads[(ballot_number, s)] = newc
+							commander_conditions[(ballot_number,s)] = cv
+							newc.start()
 				else: 
 					print "invalid command in ReplicaListenerToLeader"
 			else: 
@@ -140,19 +233,19 @@ class LeaderListenerToReplica(Thread):
 						raise ValueError
 					self.buffer += data 
 				except Exception as e:
-					print str(self_pid) + " to " + str(self.target_pid) + " connection closed"
+					print str(self.lid) + " to " + str(self.rid) + " connection closed"
 					self.conn.close()
 					self.conn = None 
 					self.conn, self.addr = self.sock.accept()
 
 
 class LeaderSenderToReplica(Thread): 
-	def __init__(self, pid, target_pid, num_servers): 
+	def __init__(self, lid, rid, num_servers): 
 		Thread.__init__(self)
-		self.pid = pid 
-		self.target_pid = target_pid
-		self.target_port = BASEPORT + target_pid * num_servers + pid 
-		self.port = BASEPORT + pid * num_servers + num_servers + target_pid
+		self.lid = lid 
+		self.rid = rid
+		self.target_port = BASEPORT + 2 * rid * num_servers + lid 
+		self.port = LEADER_BASEPORT + 4 * pid * num_servers + num_servers + rid
 		self.sock = None 
 
 	def run(self): 
@@ -174,22 +267,95 @@ class LeaderSenderToReplica(Thread):
 				time.sleep(SLEEP)
 
 
+
 class LeaderListenerToAcceptor(Thread): 
-	def __init__(self, pid, target_pid, num_servers): 
+	def __init__(self, lid, aid, num_servers): 
 		Thread.__init__(self)
-		pass 
+		self.lid = lid
+		self.aid = aid
+		self.num_accpeters = num_servers
+		self.port = LEADER_BASEPORT + 4 * lid * num_servers + 2 * num_servers + aid
+		self.sock = socket(AF_INET, SOCK_STREAM)
+		self.sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+		self.sock.bind((ADDR, self.port))
+		self.sock.listen(1)
+		self.buffer = ''
+
 
 	def run(self): 
-		pass 
+		global scout_response, commander_response, scout_conditions, commander_conditions
+		self.conn, self.addr = self.sock.accept()
+		while True:
+			if '\n' in self.buffer:
+				(l, rest) = self.buffer.split("\n", 1)
+				self.buffer = rest
+				cmd, info = l.split(None, 1)
+				if (cmd == 'p1b'):
+					proposed_b, b_num, accepts = info.split(None, 2)
+					proposed_b = int(proposed_b)
+					b_num = int(b_num)
+					pvalues = accepts.strip().split(';')
+					cv = scout_conditions[proposed_b]
+					with cv:
+						entry = self.aid, b_num, pvalues
+						rlist = scout_response.get(proposed_b, [])
+						rlist.append(entry)
+						scout_response[proposed_b] = rlist
+						cv.notify()
+
+				elif (cmd == 'p2b'):
+					proposed_b, b_num = info.split()
+					proposed_b = int(proposed_b)
+					b_num = int(b_num)
+					cv = commander_conditions[proposed_b]
+					with cv:
+						entry = self.aid, b_num
+						rlist = commander_response.get(proposed_b, [])
+						rlist.append(entry)
+						commander_response[proposed_b] = rlist
+						cv.notify() 
+				else:
+					print "Unknown command {}".format(l)
+			else:
+				try:
+					data = self.conn.recv(1024)
+					if data == "":
+						raise ValueError
+					self.buffer += data 
+				except Exception as e:
+					print str(self.aid) + " lose connection to leader " + str(self.lid)
+					self.conn.close()
+					self.conn = None 
+					self.conn, self.addr = self.sock.accept()
 
 
 class LeaderSenderToAcceptor(Thread): 
-	def __init__(self, pid, target_pid, num_servers): 
+	def __init__(self, lid, aid, num_servers): 
 		Thread.__init__(self)
-		pass 
+		self.lid = lid
+		self.aid = aid
+		self.num_accpeters = num_servers
+		self.target_port = ACCEPTER_BASEPORT + 2 * aid * num_servers + lid
+		self.port = LEADER_BASEPORT + 4 * lid * num_servers + 3 * num_servers + aid
+		self.sock = None
 
 	def run(self): 
 		pass 
 
-	def send(type, msg): 
-		pass 
+	def send(msg): 
+		if not msg.endswith('\n'):
+			msg += '\n'
+		try:
+			self.sock.send(msg)
+		except Exception as e:
+			if self.sock:
+				self.sock.close()
+  				self.sock = None
+	  		try:
+	  			new_socket = socket(AF_INET, SOCK_STREAM)
+				new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+				new_socket.bind((ADDR, self.port))
+				new_socket.connect((ADDR, self.target_port))
+				self.sock = new_socket
+			except:
+				time.sleep(SLEEP) 
