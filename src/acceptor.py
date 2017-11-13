@@ -20,10 +20,10 @@ ADDR = 'localhost'
 def init_acceptor(aid, num_leaders):
 	global listeners, clients
 	for i in range(num_leaders):
-		listeners[i] = AccepterListener(aid, i, num_leaders)
+		listeners[i] = AcceptorListener(aid, i, num_leaders)
 		listeners[i].start()
 	for i in range(num_leaders):
-		clients[i] = AccepterClient(aid, i, num_leaders)
+		clients[i] = AcceptorClient(aid, i, num_leaders)
 		clients[i].start()
 
 
@@ -53,7 +53,7 @@ def state_repr():
 # if a pvalue accepted by majority, 
 
 
-class AccepterListener(Thread):
+class AcceptorListener(Thread):
 	def __init__(self, aid, lid, num_leaders): 
 		Thread.__init__(self)
 		self.aid = aid
@@ -62,6 +62,7 @@ class AccepterListener(Thread):
 		self.sock = socket(AF_INET, SOCK_STREAM)
 		self.sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 		self.port = BASEPORT + 2 * aid * num_leaders + lid 
+		print "acceptor " + str(aid) + " listen to leader " + str(lid) + " at port " + str(self.port)
 		self.sock.bind((ADDR, self.port))
 		self.sock.listen(1)
 		self.buffer = ''
@@ -75,14 +76,14 @@ class AccepterListener(Thread):
 				self.buffer = rest
 				msgs = l.split()
 				if msgs[0] == 'p1a':
-					num = int(msgs[1])*num_leaders + self.lid
-					update_ballot_num('p1a', num)
+					num = int(msgs[1])*self.num_leaders + self.lid
+					update_ballot_num('p1a', self.lid, num)
 					clients[self.lid].send('p1b ' + str(num) + ' ' + state_repr())
 				elif msgs[0] == 'p2a':
 					b_num, s_num, proposal = msgs[1:-1]
-					b_num = int(b_num)*num_leaders + self.lid
+					b_num = int(b_num)*self.num_leaders + self.lid
 					v = Pvalue(b_num, int(s_num), proposal)
-					update_ballot_num('p2a', b_num, v)
+					update_ballot_num('p2a', self.lid, b_num, v)
 					BALLOT_LOCK.acquire()
 					clients[self.lid].send('p2b ' + str(b_num) + ' ' + str(BALLOT_NUM))
 					BALLOT_LOCK.release()
@@ -99,7 +100,7 @@ class AccepterListener(Thread):
 					self.conn, self.addr = self.sock.accept()
 
 
-class AccepterClient(Thread):
+class AcceptorClient(Thread):
 	def __init__(self, aid, lid, num_leaders): 
 		Thread.__init__(self)
 		self.aid = aid
@@ -107,6 +108,7 @@ class AccepterClient(Thread):
 		self.target_port = LEADER_BASEPORT + 4 * lid * num_leaders + 2 * num_leaders + aid
 		newbase = BASEPORT + 2 * aid * num_leaders
 		self.port = newbase + num_leaders + lid
+		print "acceptor " + str(aid) + " send to leader " + str(lid) + " at port " + str(self.target_port) + " from " + str(self.port)
 		self.sock = None
 
 	def run(self):
@@ -123,13 +125,13 @@ class AccepterClient(Thread):
   				self.sock = None
 	  		try:
 	  			new_socket = socket(AF_INET, SOCK_STREAM)
-				new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-				new_socket.bind((ADDR, self.port))
-				new_socket.connect((ADDR, self.target_port))
-				self.sock = new_socket
-			except:
-				time.sleep(SLEEP)
+	  			new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+	  			new_socket.bind((ADDR, self.port))
+	  			new_socket.connect((ADDR, self.target_port))
+	  			self.sock = new_socket
+	  		except:
+	  			time.sleep(SLEEP)
 
 
 if __name__ == "__main__":
-	init_accepter(0, 5)
+	init_acceptor(0, 5)

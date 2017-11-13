@@ -59,6 +59,7 @@ class Replica(Thread):
 		self.pid = pid
 		self.num_servers = num_servers
 		self.port = port
+		print "replica " + str(pid) + " at port " + str(port)
 		self.buffer = ""
 		for i in range(self.num_servers):
 			replica_listeners_to_leaders[i] = ReplicaListenerToLeader(pid, i, num_servers)
@@ -162,6 +163,7 @@ class ReplicaListenerToLeader(Thread):
 		self.sock = socket(AF_INET, SOCK_STREAM)
 		self.sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 		self.port = BASEPORT + 2 * rid * num_servers + lid 
+		print "replica " + str(rid) + " listen to leader " + str(lid) + " at port " + str(self.port)
 		self.sock.bind((ADDR, self.port))
 		self.sock.listen(1)
 		self.buffer = ''
@@ -196,6 +198,7 @@ class ReplicaSenderToLeader(Thread):
 		self.lid = lid
 		self.target_port = LEADER_BASEPORT + 4 * lid * num_servers + rid 
 		self.port = BASEPORT + 2 * rid * num_servers + num_servers + lid
+		print "replica " + str(rid) + " send to leader " + str(lid) + " at port " + str(self.target_port) + " from " + str(self.port)
 		self.sock = None 
 
 	def run(self): 
@@ -218,6 +221,7 @@ class ReplicaSenderToLeader(Thread):
 				time.sleep(SLEEP)
 
 def main(pid, num_servers, port):
+	print "starting main"
 	replica = Replica(pid, num_servers, port)
 	replica.start()
 	for i in range(num_servers):
