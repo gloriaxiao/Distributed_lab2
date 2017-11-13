@@ -121,17 +121,18 @@ class AcceptorClient(Thread):
 		self.connected = False
 
 	def run(self):
-		while not self.connected:
-			try:
-				new_socket = socket(AF_INET, SOCK_STREAM)
-				new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-				new_socket.bind((ADDR, self.port))
-				new_socket.connect((ADDR, self.target_port))
-				self.sock = new_socket
-				self.connected = True
-				# print "acceptor " + str(aid) + " send to leader " + str(lid) + " at port " + str(self.target_port) + " from " + str(self.port)
-			except Exception as e:
-				time.sleep(SLEEP)
+		pass
+		# while not self.connected:
+		# 	try:
+		# 		new_socket = socket(AF_INET, SOCK_STREAM)
+		# 		new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+		# 		new_socket.bind((ADDR, self.port))
+		# 		new_socket.connect((ADDR, self.target_port))
+		# 		self.sock = new_socket
+		# 		self.connected = True
+		# 		# print "acceptor " + str(aid) + " send to leader " + str(lid) + " at port " + str(self.target_port) + " from " + str(self.port)
+		# 	except Exception as e:
+		# 		time.sleep(SLEEP)
 
 	def send(self, msg):
 		if not msg.endswith('\n'):
@@ -142,13 +143,15 @@ class AcceptorClient(Thread):
 			if self.sock:
 				self.sock.close()
   				self.sock = None
-	  		try:
-	  			new_socket = socket(AF_INET, SOCK_STREAM)
-	  			new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-	  			new_socket.bind((ADDR, self.port))
-	  			new_socket.connect((ADDR, self.target_port))
-	  			self.sock = new_socket
-	  			self.sock.send(msg)
-	  		except:
-	  			time.sleep(SLEEP)
+  			while not self.connected:
+		  		try:
+		  			new_socket = socket(AF_INET, SOCK_STREAM)
+		  			new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+		  			new_socket.bind((ADDR, self.port))
+		  			new_socket.connect((ADDR, self.target_port))
+		  			self.sock = new_socket
+		  			self.connected = True
+		  			self.sock.send(msg)
+		  		except:
+		  			time.sleep(SLEEP)
 	  	# print "Acceptor {:d} sends {} to leader {:d}".format(self.aid, msg, self.lid)

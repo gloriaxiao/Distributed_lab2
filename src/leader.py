@@ -98,12 +98,12 @@ def leader(lid, num_servers):
 				b_first, s, p = pvalue.split()
 				b_first = int(b_first)
 				s = int(s)
-				if s not in pmax: 
-					pmax[s] = b_first, s, p 
+				if s not in pmax_dictionary: 
+					pmax_dictionary[s] = b_first, s, p 
 				else:
-					b_prime, s_prime, p_prime = pmax[s]
+					b_prime, s_prime, p_prime = pmax_dictionary[s]
 					if b_prime < b_first: 
-						pmax[s] = b_first, s, p
+						pmax_dictionary[s] = b_first, s, p
 			pmax = [(s, p) for (b, s, p) in pmax_dictionary.values()]
 			new_proposals = set(pmax)
 			proposals_lock.acquire()
@@ -154,7 +154,7 @@ def Scout(b):
 		with scout_condition:
 			while not scout_responses:
 				scout_condition.wait()
-			print "Stopped waiting for response"
+			print "Stopped waiting for scout response"
 			for aid, r in scout_responses.items():
 				b_num, p_vals = r
 				if b_num == b:
@@ -183,6 +183,7 @@ def Commander(b, s, p, cv):
 			while (not commander_response.get((b,s), [])):
 				cv.wait()
 			responses = commander_response[(b,s)]
+			print "Stop waiting for commander responses"
 			for r in responses:
 				aid, b_num = r
 				if b_num == b:
@@ -235,6 +236,8 @@ class LeaderListenerToReplica(Thread):
 							break
 					if not found: 
 						proposals.add((s, p))
+						print "current proposals"
+						print proposals
 						proposals_lock.release()
 						if active:
 							print "system is active at leader {:d}".format(self.lid)
@@ -401,13 +404,15 @@ class LeaderSenderToAcceptor(Thread):
 			if self.sock:
 				self.sock.close()
   				self.sock = None
-	  		try:
-	  			new_socket = socket(AF_INET, SOCK_STREAM)
-				new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-				new_socket.bind((ADDR, self.port))
-				new_socket.connect((ADDR, self.target_port))
-				self.sock = new_socket
-				self.sock.send(msg)
-			except:
-				time.sleep(SLEEP)
+  			while not self.connected:
+		  		try:
+		  			new_socket = socket(AF_INET, SOCK_STREAM)
+					new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+					new_socket.bind((ADDR, self.port))
+					new_socket.connect((ADDR, self.target_port))
+					self.sock = new_socket
+					self.connected = True
+					self.sock.send(msg)
+				except:
+					time.sleep(SLEEP)
 		# print "Leader {:d} sends {} to Acceptor {:d}".format(self.lid, msg[:-1], self.aid)
