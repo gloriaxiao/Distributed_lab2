@@ -15,35 +15,18 @@ LEADER_BASEPORT = 25000
 
 replica_listeners_to_leaders = {}
 replica_senders_to_leaders = {}
-# decision_msgs = [] 
-# decision_lock = Lock()
-# replica = None 
-
-# def append_to_list(lst, lock, msg): 
-# 	lock.acquire() 
-# 	lst.append(msg)
-# 	lock.release()
-
-# def not_empty(l, lock):
-# 	lock.acquire()
-# 	length = len(l)
-# 	lock.release()
-# 	return (length != 0)
 
 class State: 
 	def __init__(self): 
 		self.count = 0 
-		self.mandatory = [] 
-		self.optional = [] 
+		self.list = [] 
 
 	def op(self, msg): 
-		self.mandatory.append(msg) 
-		return len(self.mandatory)
+		self.list.append(msg) 
+		return len(self.list)
 
 	def toString(self): 
-		return ("{" + "'count': " + str(self.count) + 
-			", mandatory: " + ",".join(self.mandatory) + 
-			", optional: " + ",".join(self.optional))
+		return ",".join(self.list)
 
 state = State() 
 
