@@ -4,9 +4,8 @@ from socket import AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR, socket, error
 import time
 import os
 from threading import Thread, Lock
-from replica_1 import Replica
-from leader_1 import Leader
-from acceptor_1 import Acceptor
+from new_leader import Leader
+from new_acceptor import Acceptor
 
 master_thread = None
 SLEEP = 0.05
@@ -15,48 +14,79 @@ BASEPORT = 20000
 chatLog = []
 listeners = {}
 clients = {}
-replica = None
 leader = None
 acceptor = None
 
+class State: 
+	def __init__(self): 
+		self.count = 0 
+		self.data = {}
 
-class MasterListener(Thread):
+	def op(self, sid, msg): 
+		self.data[sid] = msg
+		return len(self.data)
+
+	def __str__(self):
+		keylist = self.data.keys()
+		keylist.sort()
+		return ",".join([self.data[k] for k in keylist])
+
+state = State()
+
+
+class Replica(Thread):
 	def __init__(self, pid, num_servers, port):
+		global listeners, clients
 		Thread.__init__(self)
 		self.pid = pid
 		self.num_servers = num_servers
 		self.port = port
+		print "replica " + str(pid) + " at port " + str(port)
 		self.buffer = ""
+		self.slot_number = 1 
+		self.proposals = set() 
+		self.decisions = set()
+		for i in range(num_servers):
+			if i != pid:
+				listeners[i] = ServerListener(pid, i)
+				listeners[i].start()
+		for i in range(num_servers): 
+			if (i != pid): 
+				clients[i] = ServerClient(pid, i) 
+				clients[i].start()
 		self.socket = socket(AF_INET, SOCK_STREAM)
 		self.socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 		self.socket.bind((ADDR, self.port))
 		self.socket.listen(1)
 		self.master_conn, self.master_addr = self.socket.accept()
 		self.connected = True
+		# self.initialized = False 
 
 	def run(self):
-		global replica, leader, acceptor
+		global state
+		# print "running"
 		while self.connected:
 			if '\n' in self.buffer:
-				l, rest = self.buffer.split('\n', 1)
-				print "Server {:d} receives {} from master".format(self.pid, l)
+				# print "first if"
+				# if not self.initialized: 
+				# 	leader.init_leader(self.pid, self.num_servers)
+				(l, rest) = self.buffer.split("\n", 1)
 				self.buffer = rest
-				cmd = l.split()[0]
 				(cmd, arguments) = l.split(" ", 1)
+				print "Replica {:d} receives msgs from master {}".format(self.pid, l)
 				if cmd == "get":
-					self.master_conn.send('chatLog {}\n'.format("\n".join(chatLog)))
+					self.master_conn.send('chatLog {}\n'.format(state.toString()))
 				elif cmd == "msg": 
 					print "Replica {:d} makes proposal".format(self.pid)
-					replica.propose(arguments)
+					self.propose(arguments) 
 				elif cmd == "crash":
 					exit()
 				elif cmd == "crashAfterP1b":
-					
+					pass
 				elif cmd == "crashAfterP2b":
-					broadcast_to_leaders('crashafterP2b')
+					pass
 				elif cmd == "crashP1a" or cmd == "crashP2a" or cmd == "crashDecision":
-					# Crash after sending p1a
-					broadcast_to_leaders(l)
+					pass
 				else:
 					print "Unknown command {}".format(l)
 			else:
@@ -69,7 +99,91 @@ class MasterListener(Thread):
 					self.master_conn.close()
 					self.master_conn = None 
 					self.master_conn, self.master_addr = self.socket.accept()
-				
+
+	def decide(self, arguments): 
+		# global decision_lock, decision_msgs
+		# decision_lock.acquire() 
+		# arguments = decision_msgs[0]
+		# decision_msgs = decision_msgs[1:]
+		s, p = arguments.split(" ", 1)
+		self.decisions.add((s, p))
+		print "leader: " + str(self.pid) + " self.decisions: " + str(self.decisions)		
+		while True: 
+			pair = None 
+			remove_t = None 
+			for t in self.decisions: 
+				s1, p1 = t 
+				s1 = int(s1)
+				if s1 == self.slot_number: 
+					pair = (s1, p1) 
+					remove_t = t 
+					break
+			print "pair: " + str(pair)
+			if pair == None: 
+				break
+			s1, p1 = pair 
+			for t in self.proposals: 
+				s2, p2 = t 
+				if s2 == self.slot_number and p1 != p2: 
+					self.propose(p2)
+					break 
+			self.decisions.remove(remove_t)
+			self.perform(p1)
+
+	def propose(self, p):
+		global leader
+		found = False 
+		for t in self.decisions: 
+			(s, p_prime) = t 
+			if p == p_prime:
+				found = True 
+				break
+		if not found: 
+			total_set = self.decisions.union(self.proposals)
+			all_slots_taken = [s for (s, p) in total_set]
+			print "current slots"
+			print all_slots_taken
+			if len(all_slots_taken) == 0: 
+				upper_bound = 2
+			else:
+				upper_bound = max(all_slots_taken) + 2 
+			s_prime = -1 
+			for i in range (1, upper_bound): 
+				if i not in all_slots_taken: 
+					s_prime = i
+					break 
+			proposal = s_prime, p
+			self.proposals.add(proposal)
+			leader.add_proposal(proposal)
+
+
+	def perform(self,p): 
+		print "in perform"
+		cid, msg = p.split(" ", 1)
+		found = False 
+		for i in range(self.slot_number): 
+			for t in self.decisions: 
+				j, p = t 
+				j = int(j)
+				if j < i: 
+					found = True 
+					break 
+		if found: 
+			self.slot_number += 1 
+		else: 
+			global state 
+			result = state.op(msg) 
+			self.slot_number += 1 
+			self.master_conn.send("ack " + str(cid) + " " + str(result) + "\n")
+
+	def kill(self):
+		try:
+			self.connected = False
+			self.master_conn.close()
+			self.socket.close()
+		except:
+			pass
+
 
 class ServerListener(Thread):
 	def __init__(self, pid, target_pid, num_servers): 
@@ -84,8 +198,42 @@ class ServerListener(Thread):
 		self.buffer = ''
 
 	def run(self):
+		global leader, acceptor
 		self.conn, self.addr = self.sock.accept()
 		print "Server " + str(self.pid) + " listen to Server " + str(self.target_pid) + " at port " + str(self.port)
+		while True:
+			if '\n' in self.buffer:
+				l, rest = self.buffer.split('\n', 1)
+				self.buffer = rest
+				cmd, info = l.split(None, 1)
+				# leader receives
+				if cmd == 'p1b':
+					leader.process_p1b(self.target_pid, info)
+				elif cmd == 'p2b':
+					leader.process_p2b(self.target_pid, info)
+				# accpetor recieves
+				elif cmd == 'p1a':
+					acceptor.process_p1a(self.target_pid, info)
+				elif cmd == 'p2a':
+					acceptor.process_p2a(self.target_pid, info)
+				elif cmd == 'decision':
+					print "Server " + str(self.pid) + " received decision from leader " + str(self.target_pid)
+					# append_to_list(decision_msgs, decision_lock, arguments)
+					global replica 
+					replica.decide(info)
+				else: 
+					print "invalid command in ReplicaListenerToLeader"
+			else: 
+				try:
+					data = self.conn.recv(1024)
+					if data == "":
+						raise ValueError
+					self.buffer += data 
+				except Exception as e:
+					print 'Server ' + str(self.pid) + " to Server " + str(self.target_pid) + " connection closed"
+					self.conn.close()
+					self.conn = None 
+					self.conn, self.addr = self.sock.accept()
 
 
 class ServerClient(Thread):
@@ -101,6 +249,7 @@ class ServerClient(Thread):
 	def run(self):
 		while not self.connected:
 			try:
+
 				new_socket = socket(AF_INET, SOCK_STREAM)
 				new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 				new_socket.bind((ADDR, self.port))
@@ -135,6 +284,7 @@ class ServerClient(Thread):
 		except:
 			pass
 
+
 def make_sure_path_exists(path):
 	try:
 		os.makedirs(path)
@@ -147,20 +297,12 @@ def main(pid, num_servers, port):
 	global replica, leader, acceptor, listeners, clients
 	LOG_PATH = "chatLogs/log{:d}.txt".format(pid)
 	make_sure_path_exists("chatLogs")
-	for i in range(num_servers):
-		if i != pid:
-			listeners[i] = ServerListener(pid, i)
-			listeners[i].start()
-	for i in range(num_servers): 
-		if (i != pid): 
-			clients[i] = ServerClient(pid, i) 
-			clients[i].start()
-	master_thread = MasterListener(pid, num_servers, port)
-	master_thread.start()
-	replica = Replica(server)
-	leader = Leader(server)
-	acceptor = Acceptor(server)
-
+	replica = Replica(pid, num_servers, port)
+	leader = Leader(pid, num_servers, clients)
+	acceptor = Acceptor(pid, num_servers, clients)
+	replica.start()
+	leader.start()
+	acceptor.start()
 
 if __name__ == "__main__":
 	args = sys.argv
