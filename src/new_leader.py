@@ -117,10 +117,10 @@ class Leader(Thread):
 		self.scout_thread.start()
 		while True:
 			if(adopted_msg):
-				# print "Leader {:d} gets adopt msg: {}".format(self.pid, adopted_msg)
-				b, pvals = adopted_msg
+				print "Leader {:d} gets adopt msg: {}".format(self.pid, adopted_msg)
+				adopted_b, pvals = adopted_msg
 				adopted_msg = None
-				b = int(b)
+				adopted_b = int(adopted_b)
 				pmax_dictionary = {} 
 				for pvalue in pvals:
 					b_first, s, p = pvalue.split()
@@ -149,10 +149,11 @@ class Leader(Thread):
 				for t in self.proposals: 
 					s, p = t
 					s = int(s)
-					cv = commander_conditions.get((b,s), Condition())
-					commander_conditions[(b,s)] = cv
-					newc = Thread(target=Commander, args=(b, s, p, self.pid, self.num_servers, self.clients))
-					self.commander_threads[(b, s)] = newc
+					cv = commander_conditions.get((adopted_b,s), Condition())
+					commander_conditions[(adopted_b,s)] = cv
+					newc = Thread(target=Commander, 
+							args=(adopted_b, s, p, self.pid, self.num_servers, self.clients))
+					self.commander_threads[(adopted_b, s)] = newc
 					newc.start()
 				self.p_lock.release()
 				self.active = True
