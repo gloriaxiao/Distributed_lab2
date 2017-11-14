@@ -175,7 +175,7 @@ class Replica(Thread):
 					pair = (s1, p1) 
 					remove_t = t 
 					break
-			print "pair: " + str(pair)
+			# print "pair: " + str(pair)
 			if pair == None: 
 				break
 			s1, p1 = pair 
@@ -198,8 +198,6 @@ class Replica(Thread):
 		if not found: 
 			total_set = self.decisions.union(self.proposals)
 			all_slots_taken = [s for (s, p) in total_set]
-			print "current slots"
-			print all_slots_taken
 			if len(all_slots_taken) == 0: 
 				upper_bound = 2
 			else:
@@ -215,7 +213,7 @@ class Replica(Thread):
 
 
 	def perform(self,s, p): 
-		print "in perform"
+		# print "in perform"
 		cid, msg = p.split(" ", 1)
 		found = False 
 		for i in range(self.slot_number): 
@@ -231,6 +229,7 @@ class Replica(Thread):
 			global state 
 			result = state.op(s, msg) 
 			self.slot_number += 1 
+			print "Replica {:d} sends ACK back to master: {}".format(self.pid, str(result))
 			self.master_conn.send("ack " + str(cid) + " " + str(result) + "\n")
 
 	def kill(self):
@@ -257,7 +256,7 @@ class ServerListener(Thread):
 	def run(self):
 		global leader, acceptor, replica
 		self.conn, self.addr = self.sock.accept()
-		print "Server " + str(self.pid) + " listen to Server " + str(self.target_pid) + " at port " + str(self.port)
+		# print "Server " + str(self.pid) + " listen to Server " + str(self.target_pid) + " at port " + str(self.port)
 		while True:
 			if '\n' in self.buffer:
 				l, rest = self.buffer.split('\n', 1)
@@ -320,7 +319,7 @@ class ServerClient(Thread):
 					s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 					s.bind((ADDR, self.port))
 					s.connect((ADDR, self.target_port))
-					print "serverclient " + str(self.pid) + " connected to " + str(self.target_pid)
+					# print "serverclient " + str(self.pid) + " connected to " + str(self.target_pid)
 					self.sock = s 
 					self.sock.send("heartbeat " + str(self.pid) + "\n")
 				except: 

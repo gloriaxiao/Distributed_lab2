@@ -14,24 +14,25 @@ commander_responses = {}
 
 adopted_msg = None
 preempted_ballot = set()
-preempted_lock = Lock()
+preempted_cv = Condition()
+
 
 def has_preempted():
-	global preempted_ballot, preempted_lock
-	preempted_lock.acquire()
+	global preempted_ballot, preempted_cv
+	preempted_cv.acquire()
 	length = len(preempted_ballot)
-	preempted_lock.release()
+	preempted_cv.release()
 	return (length != 0)
 
 def add_preempted(b):
-	global preempted_lock, preempted_ballot
-	preempted_lock.acquire()
+	global preempted_cv, preempted_ballot
+	preempted_cv.acquire()
 	preempted_ballot.add(b)
-	preempted_lock.release()
+	preempted_cv.release()
 
 
 def Scout(b, pid, num_servers, clients):
-	global scout_responses, scout_condition, adopted_msg, preempted_msgs, preempted_lock
+	global scout_responses, scout_condition, adopted_msg
 	print "Leader {:d} spawn Scout for ballot number {:d}".format(pid, b)
 	waitfor = set(range(0, num_servers)) - set([pid])
 	for i in clients:
@@ -41,14 +42,15 @@ def Scout(b, pid, num_servers, clients):
 		with scout_condition:
 			while not scout_responses:
 				scout_condition.wait()
-			print "Leader " + str(pid) + " stopped waiting for scout response"
+			# print "Leader " + str(pid) + " stopped waiting for scout response"
 			for aid, r in scout_responses.items():
 				b_num, p_vals = r
-				print "aid: " + str(aid) + " b_num: " + str(b_num) + " pvals: " + str(p_vals)
+				# print "aid: " + str(aid) + " b_num: " + str(b_num) + " pvals: " + str(p_vals)
 				if b_num == b:
 					waitfor.remove(aid)
 					pvalues.update(p_vals)
 					if len(waitfor) < num_servers/2:
+						print "Leader {:d} gets majority accepted for {:d}".format(pid, b)
 						entry = b, pvalues
 						adopted_msg = entry
 						scout_responses = {}
@@ -58,7 +60,6 @@ def Scout(b, pid, num_servers, clients):
 					add_preempted(b_num)
 					return
 			scout_responses = {}
-
 
 
 def Commander(b, s, p, pid, num_servers, clients):
@@ -73,14 +74,15 @@ def Commander(b, s, p, pid, num_servers, clients):
 			while (not commander_responses.get((b,s), [])):
 				cv.wait()
 			responses = commander_responses[(b,s)]
-			print "Leader " + str(pid) + " stopped waiting for commander responses"
+			# print "Leader " + str(pid) + " stopped waiting for commander responses"
 			for r in responses:
 				aid, b_num = r
-				print "leader: " + str(pid) + " aid: " + str(aid) + " b_num: " + str(b_num) + " b: " + str(b)
+				# print "leader: " + str(pid) + " aid: " + str(aid) + " b_num: " + str(b_num) + " b: " + str(b)
 				if b_num == b:
 					waitfor.remove(aid)
-					print "remove " + str(aid) + " from waitfor so length of waitfor is " + str(len(waitfor))
+					# print "remove " + str(aid) + " from waitfor so length of waitfor is " + str(len(waitfor))
 					if len(waitfor) < num_servers/2:
+						print "Leader {:d} sends decisions to all replicas".format(pid)
 						for i in clients:
 							clients[i].send("decision {} {}".format(str(s), str(p)))
 						commander_responses[(b,s)] = []
@@ -101,19 +103,18 @@ class Leader(Thread):
 		self.proposals = set()
 		self.p_lock = Lock()
 		self.ballot_num = pid
-		self.b_lock = Lock()
 		self.commander_threads = {}
 		self.scout_thread = None
 
 	def run(self):
 		global commander_conditions, commander_responses, adopted_msg
-		global preempted_ballot, preempted_lock
+		global preempted_ballot, preempted_cv
 		self.scout_thread = Thread(target=Scout, 
 							args=(self.ballot_num, self.pid, self.num_servers, self.clients))
 		self.scout_thread.start()
 		while True:
 			if(adopted_msg):
-				print "Leader {:d} gets adopt msg: {}".format(self.pid, adopted_msg)
+				# print "Leader {:d} gets adopt msg: {}".format(self.pid, adopted_msg)
 				b, pvals = adopted_msg
 				adopted_msg = None
 				b = int(b)
@@ -153,22 +154,16 @@ class Leader(Thread):
 				self.p_lock.release()
 				self.active = True
 			elif(has_preempted()):
-				preempted_lock.acquire()
-				for b in preempted_ballot:
-					print "Leader {:d} gets preempted msg: {}".format(self.pid, b)
-					self.b_lock.acquire()
-					if b > self.ballot_num:
-						active = False
-						new_b = (b/self.num_servers + 1)*self.num_servers + self.pid
-						self.ballot_num = new_b
-						self.b_lock.release()
-						self.scout_thread = Thread(target=Scout, 
-											args=(new_b, self.pid, self.num_servers, self.clients))
-						self.scout_thread.start()
-					else:
-						self.b_lock.release()
-				preempted_ballot = set()
-				preempted_lock.release()
+				with preempted_cv:
+					for b in preempted_ballot:
+						if b > self.ballot_num:
+							active = False
+							new_b = (b/self.num_servers + 1)*self.num_servers + self.pid
+							self.ballot_num = new_b
+							self.scout_thread = Thread(target=Scout, 
+												args=(new_b, self.pid, self.num_servers, self.clients))
+							self.scout_thread.start()
+					preempted_ballot = set()
 			else:
 				time.sleep(SLEEP)
 
@@ -176,7 +171,7 @@ class Leader(Thread):
 		global commander_threads, commander_conditions
 		s, p = proposal
 		s = int(s)
-		print "Leader {:d} get proposal {}".format(self.pid, p)
+		print "Leader {:d} get proposal {:d}, {}".format(self.pid, s, p)
 		found = False
 		self.p_lock.acquire()
 		for t in self.proposals:
@@ -186,17 +181,15 @@ class Leader(Thread):
 				break
 		if not found: 
 			self.proposals.add((s, p))
-			print "current proposals"
-			print self.proposals
+			# print "current proposals"
+			# print self.proposals
 			self.p_lock.release()
 			if self.active:
-				print "system is active at leader {:d}".format(self.pid)
+				# print "system is active at leader {:d}".format(self.pid)
 				cv = Condition()
-				self.b_lock.acquire()
 				newc = Thread(target=Commander, args=(self.ballot_num, s, p, cv))
 				commander_threads[(self.ballot_num, s)] = newc
 				commander_conditions[(self.ballot_num,s)] = cv
-				self.b_lock.release()
 				newc.start()
 		else:
 			self.p_lock.release()
@@ -204,7 +197,7 @@ class Leader(Thread):
 	def process_p1b(self, target_pid, info):
 		global scout_condition, scout_responses
 		proposed_b, b_num, accepts = info.split(None, 2)
-		print "Leader {:d} receives p1b from Accpetor {:d} with {}".format(self.pid, target_pid, info) 
+		# print "Leader {:d} receives p1b from Accpetor {:d} with {}".format(self.pid, target_pid, info) 
 		proposed_b = int(proposed_b)
 		b_num = int(b_num)
 		if accepts == "none":
@@ -213,7 +206,7 @@ class Leader(Thread):
 			pvalues = accepts.strip().split(';')
 		with scout_condition:
 			entry = b_num, pvalues
-			print "Leader {:d} updates its scout response".format(self.pid)
+			# print "Leader {:d} updates its scout response".format(self.pid)
 			scout_responses[target_pid] = entry
 			scout_condition.notify()
 
@@ -224,11 +217,9 @@ class Leader(Thread):
 		proposed_b = int(proposed_b)
 		proposed_s = int(proposed_s)
 		b_num = int(b_num)
-		self.b_lock.acquire()
 		key = proposed_b, proposed_s
-		self.b_lock.release()
-		print "commander condition keys"
-		print " ".join([str(k[0]) + ', ' + str(k[1]) for k in commander_conditions])
+		# print "commander condition keys"
+		# print " ".join([str(k[0]) + ', ' + str(k[1]) for k in commander_conditions])
 		cv = commander_conditions[key]
 		with cv:
 			entry = target_pid, b_num

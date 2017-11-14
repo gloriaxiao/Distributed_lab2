@@ -37,7 +37,7 @@ class Acceptor(Thread):
 	def process_p1a(self, target_pid, info):
 		msgs = info.split()
 		num = int(msgs[0])
-		print "Acceptor {:d} gets p1a with {:d} from Leader {:d}".format(self.pid, num, target_pid)
+		# print "Acceptor {:d} gets p1a with {:d} from Leader {:d}".format(self.pid, num, target_pid)
 		self.update_ballot_num('p1a', num)
 		try: 
 			self.clients[target_pid].send('p1b ' + str(num) + ' ' + self.state_str())
@@ -53,7 +53,7 @@ class Acceptor(Thread):
 		else:
 			proposal = msgs[2]
 			# b_num, s_num, proposal = msgs[1:]
-		print "Acceptor {:d} gets p2a with {:d}, {:d}, {} from Leader {:d}".format(self.pid, b_num, s_num, proposal, target_pid)
+		# print "Acceptor {:d} gets p2a with {:d}, {:d}, {} from Leader {:d}".format(self.pid, b_num, s_num, proposal, target_pid)
 		v = Pvalue(b_num, s_num, proposal)
 		self.update_ballot_num('p2a', b_num, v)
 		self.b_lock.acquire()
