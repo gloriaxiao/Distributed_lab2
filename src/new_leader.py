@@ -80,7 +80,7 @@ def Commander(b, s, p, pid, num_servers, clients):
 				if b_num == b:
 					waitfor.remove(aid)
 					print "remove " + str(aid) + " from waitfor so length of waitfor is " + str(len(waitfor))
-					if len(waitfor) < NUM_SERVERS/2:
+					if len(waitfor) < num_servers/2:
 						for i in clients:
 							clients[i].send("decision {} {}".format(str(s), str(p)))
 						commander_responses[(b,s)] = []
@@ -220,7 +220,7 @@ class Leader(Thread):
 		print " ".join([str(k[0]) + ', ' + str(k[1]) for k in commander_conditions])
 		cv = commander_conditions[key]
 		with cv:
-			entry = self.aid, b_num
+			entry = target_pid, b_num
 			rlist = commander_responses.get(key, [])
 			rlist.append(entry)
 			commander_responses[key] = rlist
