@@ -166,6 +166,7 @@ class Replica(Thread):
 
 	def decide(self, arguments): 
 		s, p = arguments.split(" ", 1)
+		s = int(s)
 		self.decisions.add((s, p))
 		print "leader: " + str(self.pid) + " self.decisions: " + str(self.decisions)		
 		while True: 
@@ -187,7 +188,7 @@ class Replica(Thread):
 				if s2 == self.slot_number and p1 != p2: 
 					self.propose(p2)
 					break 
-			self.decisions.remove(remove_t)
+			# self.decisions.remove(remove_t)
 			self.perform(s1, p1)
 
 	def propose(self, p):
@@ -201,6 +202,7 @@ class Replica(Thread):
 		if not found: 
 			total_set = self.decisions.union(self.proposals)
 			all_slots_taken = [s for (s, p) in total_set]
+			print all_slots_taken 
 			if len(all_slots_taken) == 0: 
 				upper_bound = 2
 			else:
