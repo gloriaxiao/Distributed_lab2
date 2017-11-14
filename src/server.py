@@ -167,7 +167,7 @@ class Replica(Thread):
 	def decide(self, arguments): 
 		s, p = arguments.split(" ", 1)
 		self.decisions.add((s, p))
-		print "leader: " + str(self.pid) + " self.decisions: " + str(self.decisions)		
+		print "Replica: " + str(self.pid) + " self.decisions: " + str(self.decisions)		
 		while True: 
 			pair = None 
 			remove_t = None 
