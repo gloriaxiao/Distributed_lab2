@@ -93,25 +93,13 @@ class Replica(Thread):
 		print "replica " + str(pid) + " at port " + str(port)
 		self.buffer = ""
 		self.slot_number = 1 
-		self.proposals = set() 
-		self.decisions = set()
-		# for i in range(num_servers):
-		# 	if i != pid:
-		# 		listeners[i] = ServerListener(pid, i, num_servers)
-		# 		# listeners[i].setDaemon(True)
-		# 		listeners[i].start()
-		# for i in range(num_servers): 
-		# 	if i != pid: 
-		# 		clients[i] = ServerClient(pid, i, num_servers) 
-		# 		# clients[i].setDaemon(True)
-		# 		clients[i].start()
+		self.proposals = {}
+		self.decisions = {}
 		for i in range(num_servers):
 			listeners[i] = ServerListener(pid, i, num_servers)
-				# listeners[i].setDaemon(True)
 			listeners[i].start()
 		for i in range(num_servers): 
 			clients[i] = ServerClient(pid, i, num_servers) 
-				# clients[i].setDaemon(True)
 			clients[i].start()
 		self.socket = socket(AF_INET, SOCK_STREAM)
 		self.socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
@@ -173,56 +161,37 @@ class Replica(Thread):
 					self.master_conn = None 
 					self.master_conn, self.master_addr = self.socket.accept()
 
+
 	def decide(self, arguments): 
 		s, p = arguments.split(" ", 1)
 		s = int(s)
-		self.decisions.add((s, p))
-		print "leader: " + str(self.pid) + " self.decisions: " + str(self.decisions)		
-		while True: 
-			pair = None 
-			remove_t = None 
-			for t in self.decisions: 
-				s1, p1 = t 
-				s1 = int(s1)
-				if s1 == self.slot_number: 
-					pair = (s1, p1) 
-					remove_t = t 
-					break
-			# print "pair: " + str(pair)
-			if pair == None: 
-				break
-			s1, p1 = pair 
-			for t in self.proposals: 
-				s2, p2 = t 
-				if s2 == self.slot_number and p1 != p2: 
-					self.propose(p2)
-					break 
-			# self.decisions.remove(remove_t)
-			self.perform(s1, p1)
+		self.decisions[s] = p
+		print "Replica: " + str(self.pid) + " self.decisions: " + str(self.decisions)
+		for slot, op in self.decisions.items():
+			if slot in self.proposals:
+				propose_p = self.proposals[slot]
+				if propose_p != op:
+					self.propose(propose_p)
+					del proposals[slot]
+			self.perform(slot, op)
+
 
 	def propose(self, p):
 		global leader
 		found = False 
-		for t in self.decisions: 
-			(s, p_prime) = t 
-			if p == p_prime:
+		for s in self.decisions: 
+			if p == self.decisions[s]:
 				found = True 
 				break
-		if not found: 
-			total_set = self.decisions.union(self.proposals)
-			all_slots_taken = [s for (s, p) in total_set]
-			print all_slots_taken 
-			if len(all_slots_taken) == 0: 
-				upper_bound = 2
-			else:
-				upper_bound = max(all_slots_taken) + 2 
-			s_prime = 1
-			for i in range (1, upper_bound): 
-				if i not in all_slots_taken: 
-					s_prime = i
-					break 
-			proposal = s_prime, p
-			self.proposals.add(proposal)
+		if not found:
+			propose_s = 1
+			while True:
+				if (propose_s in self.decisions) or (propose_s in self.proposals):
+					propose_s += 1
+				else:
+					break
+			proposal = propose_s, p
+			self.proposals[propose_s] = p
 			leader.add_proposal(proposal)
 
 
@@ -230,8 +199,7 @@ class Replica(Thread):
 		# print "in perform"
 		cid, op = p.split(" ", 1)
 		found = False 
-		for i in self.decisions: 
-			s_prime, p_prime = i 
+		for s_prime, p_prime in self.decisions.items(): 
 			if s_prime < self.slot_number and p == p_prime: 
 				found = True 
 				break 
@@ -244,6 +212,7 @@ class Replica(Thread):
 			print "Replica {:d} sends ACK back to master: {}".format(self.pid, str(result))
 			self.master_conn.send("ack " + str(cid) + " " + str(result) + "\n")
 
+
 	def kill(self):
 		try:
 			self.connected = False
@@ -251,6 +220,7 @@ class Replica(Thread):
 			self.socket.close()
 		except:
 			pass
+
 
 class ServerListener(Thread):
 	def __init__(self, pid, target_pid, num_servers): 
