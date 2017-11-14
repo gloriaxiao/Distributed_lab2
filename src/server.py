@@ -69,17 +69,20 @@ def load_from_chatLog():
 			for i in range(chatLog_line): 
 				line = file.readline()
 				chatLog.append(line)
+			print chatLog
 			proposals_line = int(file.readline())
 			for i in range(proposals_line): 
 				line = file.readline()
 				s, p = line.split(None, 1)
 				s = int(s)
 				leader.proposals.add((s, p)) 
+			print leader.proposals
 			accepted_line = int(file.readline())
 			for i in range(accepted_line): 
 				line = file.readline()
 				b, s, c = line.split(None, 2)
 				acceptor.accepted_line.append(Pvalue(b, s, c))
+			print acceptor.accepted_line
 	except: 
 		pass 
 
@@ -125,7 +128,8 @@ class Replica(Thread):
 					cmd = l 
 				print "Replica {:d} receives msgs from master {}".format(self.pid, l)
 				if cmd == "get":
-					self.master_conn.send('chatLog {}\n'.format(state.toString()))
+					print str(state)
+					self.master_conn.send('chatLog {}\n'.format(str(state)))
 				elif cmd == "msg": 
 					print "Replica {:d} makes proposal".format(self.pid)
 					self.propose(arguments) 
@@ -168,12 +172,13 @@ class Replica(Thread):
 		self.decisions[s] = p
 		print "Replica: " + str(self.pid) + " self.decisions: " + str(self.decisions)
 		for slot, op in self.decisions.items():
-			if slot in self.proposals:
-				propose_p = self.proposals[slot]
-				if propose_p != op:
-					self.propose(propose_p)
-					del self.proposals[slot]
-			self.perform(slot, op)
+			if slot == self.slot_number: 
+				if slot in self.proposals:
+					propose_p = self.proposals[slot]
+					if propose_p != op:
+						self.propose(propose_p)
+						del self.proposals[slot]
+				self.perform(slot, op)
 
 
 	def propose(self, p):
@@ -196,18 +201,21 @@ class Replica(Thread):
 
 
 	def perform(self,s, p): 
-		# print "in perform"
+		print "in perform: " + str(self.pid) + " s: " + str(s) + " p: " + str(p) + " proposals: " + str(self.proposals.values())
 		cid, op = p.split(" ", 1)
 		found = False 
 		for s_prime, p_prime in self.decisions.items(): 
-			if s_prime < self.slot_number and p == p_prime: 
+			if s_prime < self.slot_number and p == p_prime:
+				print "s_prime: " + str(s_prime) + " self.slot_number " + str(self.slot_number)
 				found = True 
 				break 
 		if found: 
+			print "self.decision: " + str(self.decisions)
 			self.slot_number += 1 
 		else: 
+			print "not found"
 			global state 
-			result = state.op(s, p) 
+			result = state.op(s, op) 
 			self.slot_number += 1 
 			if p in self.proposals.values(): 	
 				print "Replica {:d} sends ACK back to master: {}".format(self.pid, str(result))
@@ -238,7 +246,7 @@ class ServerListener(Thread):
 	def run(self):
 		global leader, acceptor, replica
 		self.conn, self.addr = self.sock.accept()
-		# print "Server " + str(self.pid) + " listen to Server " + str(self.target_pid) + " at port " + str(self.port)
+		print "Server " + str(self.pid) + " listen to Server " + str(self.target_pid) + " at port " + str(self.port)
 		while True:
 			if '\n' in self.buffer:
 				l, rest = self.buffer.split('\n', 1)
@@ -301,7 +309,7 @@ class ServerClient(Thread):
 					s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 					# s.bind((ADDR, self.port))
 					s.connect((ADDR, self.target_port))
-					# print "serverclient " + str(self.pid) + " connected to " + str(self.target_pid)
+					print "serverclient " + str(self.pid) + " connected to " + str(self.target_pid)
 					self.sock = s 
 					self.sock.send("heartbeat " + str(self.pid) + "\n")
 				except: 
@@ -342,7 +350,7 @@ class ServerClient(Thread):
 			self.forward_msg(msg)
 			exit() 
 		elif cmd == "p2b" and crash.crashAfterP2b: 
-			print "crashing p2a"
+			print "crashing p2b"
 			self.forward_msg(msg)
 			exit()
 		else: 
@@ -363,7 +371,7 @@ class ServerClient(Thread):
 				self.sock = s 
 				self.sock.send(msg)
 			except:
-				print "***************************** " 
+				print "***************************** " + str(self.pid) + " to " + str(self.target_pid) + ": " + msg[:-1]
 				time.sleep(SLEEP)
 
 
@@ -399,7 +407,6 @@ def main(pid, num_servers, port):
 	crash = Crash() 
 	replica = Replica(pid, num_servers, port)
 	replica.setDaemon(True)
-	replica.start() 
 	acceptor = Acceptor(pid, num_servers, clients)
 	acceptor.setDaemon(True)
 	acceptor.start()

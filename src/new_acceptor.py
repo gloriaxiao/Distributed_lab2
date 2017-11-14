@@ -29,9 +29,14 @@ class Acceptor(Thread):
 		if req_type == 'p1a':
 			if b > self.ballot_num:	
 				self.ballot_num = b
-		elif req_type == 'p2a':
-			if p_val and b >= self.ballot_num:
+		elif req_type == 'p2a': 
+			if b >= self.ballot_num: 
+				self.ballot_num = b
+			if p_val: 
 				self.accepted.append(p_val)
+			# if p_val and b >= self.ballot_num:
+			# 	self.accepted.append(p_val)
+			# 	self.ballot_num = b 
 		self.b_lock.release()
 
 	def process_p1a(self, target_pid, info):
