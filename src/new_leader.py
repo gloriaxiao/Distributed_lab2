@@ -153,7 +153,7 @@ class Leader(Thread):
 					s = int(s)
 					cv = commander_conditions.get((adopted_b,s), Condition())
 					commander_conditions[(adopted_b,s)] = cv
-					print "Spawn out commander for adopted"
+					# print "Spawn out commander for adopted"
 					newc = Thread(target=Commander, 
 							args=(adopted_b, s, p, self.pid, self.num_servers, self.clients))
 					self.commander_threads[(adopted_b, s)] = newc
@@ -193,7 +193,7 @@ class Leader(Thread):
 			self.p_lock.release()
 			if self.active:
 				# print "system is active at leader {:d}".format(self.pid)
-				print "spawn out commander for proposal"
+				# print "spawn out commander for proposal"
 				cv = commander_conditions.get([(self.ballot_num,s)], Condition())
 				newc = Thread(target=Commander, args=(self.ballot_num, s, p, self.pid, self.num_servers, self.clients))
 				commander_threads[(self.ballot_num, s)] = newc
