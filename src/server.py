@@ -18,6 +18,18 @@ replica = None
 leader = None
 acceptor = None
 LOG_PATH = None 
+crash = None 
+
+class Crash:
+	def __init__(self):
+		self.crashAfterP1b = False 
+		self.crashAfterP2b = False 
+		self.crashAfterP1a = False  
+		self.crashAfterP2a = False
+		self.crashDecision = False 
+		self.p1a = []
+		self.p2a = []
+		self.decision = [] 
 
 class State: 
 	def __init__(self): 
@@ -86,10 +98,12 @@ class Replica(Thread):
 		for i in range(num_servers):
 			if i != pid:
 				listeners[i] = ServerListener(pid, i, num_servers)
+				listeners[i].setDaemon(True)
 				listeners[i].start()
 		for i in range(num_servers): 
-			if (i != pid): 
+			if i != pid: 
 				clients[i] = ServerClient(pid, i, num_servers) 
+				clients[i].setDaemon(True)
 				clients[i].start()
 		self.socket = socket(AF_INET, SOCK_STREAM)
 		self.socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
@@ -100,7 +114,7 @@ class Replica(Thread):
 		self.leader_initialized = False 
 
 	def run(self):
-		global state
+		global state, crash 
 		load_from_chatLog()
 		while self.connected:
 			if '\n' in self.buffer:
@@ -118,11 +132,22 @@ class Replica(Thread):
 				elif cmd == "crash":
 					exit()
 				elif cmd == "crashAfterP1b":
-					pass
+					crash.crashAfterP1b = True 
 				elif cmd == "crashAfterP2b":
-					pass
+					crash.crashAfterP2b = True 
 				elif cmd == "crashP1a" or cmd == "crashP2a" or cmd == "crashDecision":
-					pass
+					lst = arguments.split()
+					for i in lst: 
+						lst[i] = int(lst[i])
+					if cmd == "crashP1a": 
+						crash.crashP1a = True 
+						crash.p1a = lst 
+					elif cmd == "crashP2a": 
+						crash.crashP2a = True 
+						crash.p2a = lst 
+					elif cmd == "crashDecision": 
+						crash.crashDecision = True 
+						crash.decision = lst 
 				else:
 					print "Unknown command {}".format(l)
 			else:
@@ -294,18 +319,44 @@ class ServerClient(Thread):
 					self.sock.send("heartbeat " + str(self.pid) + "\n")
 				except: 
 					time.sleep(0.1) 
-		# while not self.sock:
-		# 	try:
-		# 		new_socket = socket(AF_INET, SOCK_STREAM)
-		# 		new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-		# 		new_socket.bind((ADDR, self.port))
-		# 		new_socket.connect((ADDR, self.target_port))
-		# 		self.sock = new_socket
-		# 		# print "State " + str(self.pid) + " sender to State " + str(self.target_pid) + " at port " + str(self.target_port) + " from " + str(self.port)
-		# 	except Exception as e:
-		# 		time.sleep(SLEEP)
 
 	def send(self, msg): 
+		global crash 
+		cmd, arguments = msg.split(None, 1)
+		if cmd == "p1a" and crash.crashP1a: 
+			if self.target_port not in crash.p1a: 
+				return 
+			else: 
+				crash.p1a.remove(self.target_port)
+				self.forward_msg(msg)
+				if len(crash.p1a) == 0: 
+					exit() 
+		elif cmd == "p2a" and crash.crashP2a: 
+			if self.target_port not in crash.p2a: 
+				return 
+			else: 
+				crash.p2a.remove(self.target_port)
+				self.forward_msg(msg)
+				if len(crash.p2a) == 0:
+					exit()
+		elif cmd == "decision" and crash.crashDecision: 
+			if self.target_port not in crash.decision: 
+				return 
+			else: 
+				crash.decision.remove(self.target_port)
+				self.forward_msg(msg)
+				if len(crash.decision) == 0:
+					exit()
+		elif cmd == "p1b": 
+			self.forward_msg(msg)
+			exit() 
+		elif cmd == "p2b": 
+			self.forward_msg(msg)
+			exit()
+		else: 
+			self.forward_msg(msg)
+
+	def forward_msg(self, msg)
 		if not msg.endswith("\n"): 
 			msg = msg + "\n"
 		try: 
@@ -337,15 +388,28 @@ def make_sure_path_exists(path):
 			print("Error: Path couldn't be recognized!")
 			print(e)
 
+def exit():
+	global listeners, clients
+	for i in listeners:
+		listeners[i].kill()
+	for i in clients:
+		clients[i].kill()
+	save_to_chatLog()
+	os._exit(0)
+
 def main(pid, num_servers, port):
-	global replica, leader, acceptor, listeners, clients, LOG_PATH
+	global replica, leader, acceptor, listeners, clients, LOG_PATH, crash 
 	LOG_PATH = "chatLogs/log{:d}.txt".format(pid)
 	make_sure_path_exists("chatLogs")
+	crash = Crash() 
 	replica = Replica(pid, num_servers, port)
+	replica.setDaemon(True)
 	replica.start() 
 	acceptor = Acceptor(pid, num_servers, clients)
+	acceptor.setDaemon(True)
 	acceptor.start()
 	leader = Leader(pid, num_servers, clients)
+	leader.setDaemon(True)
 
 if __name__ == "__main__":
 	args = sys.argv
