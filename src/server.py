@@ -241,7 +241,6 @@ class Replica(Thread):
 		except:
 			pass
 
-
 class ServerListener(Thread):
 	def __init__(self, pid, target_pid, num_servers): 
 		Thread.__init__(self)
@@ -318,7 +317,7 @@ class ServerClient(Thread):
 					self.sock = None
 					s = socket(AF_INET, SOCK_STREAM)
 					s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-					s.bind((ADDR, self.port))
+					# s.bind((ADDR, self.port))
 					s.connect((ADDR, self.target_port))
 					# print "serverclient " + str(self.pid) + " connected to " + str(self.target_pid)
 					self.sock = s 
@@ -377,12 +376,14 @@ class ServerClient(Thread):
 			self.sock = None 
 			s = socket(AF_INET, SOCK_STREAM)
 			s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-			s.connect((ADDR, self.port))
+			# s.bind((ADDR, self.port))
+			s.connect((ADDR, self.target_port))
 			self.sock = s 
 			self.sock.send(msg)
 			# except:
 			# 	print "***************************** " 
 			# 	time.sleep(SLEEP)
+
 
 	def kill(self):
 		try:
