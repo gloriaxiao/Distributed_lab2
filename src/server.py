@@ -122,7 +122,10 @@ class Replica(Thread):
 					leader.start()
 				(l, rest) = self.buffer.split("\n", 1)
 				self.buffer = rest
-				(cmd, arguments) = l.split(" ", 1)
+				try: 
+					(cmd, arguments) = l.split(" ", 1)
+				except: 
+					print l 
 				print "Replica {:d} receives msgs from master {}".format(self.pid, l)
 				if cmd == "get":
 					self.master_conn.send('chatLog {}\n'.format(state.toString()))
@@ -214,20 +217,18 @@ class Replica(Thread):
 
 	def perform(self,s, p): 
 		# print "in perform"
-		cid, msg = p.split(" ", 1)
+		cid, op = p.split(" ", 1)
 		found = False 
-		for i in range(self.slot_number): 
-			for t in self.decisions: 
-				j, p = t 
-				j = int(j)
-				if j < i: 
-					found = True 
-					break 
+		for i in self.decisions: 
+			s_prime, p_prime = i 
+			if s_prime < self.slot_number and p == p_prime: 
+				found = True 
+				break 
 		if found: 
 			self.slot_number += 1 
 		else: 
 			global state 
-			result = state.op(s, msg) 
+			result = state.op(s, p) 
 			self.slot_number += 1 
 			print "Replica {:d} sends ACK back to master: {}".format(self.pid, str(result))
 			self.master_conn.send("ack " + str(cid) + " " + str(result) + "\n")
@@ -372,15 +373,16 @@ class ServerClient(Thread):
 		try: 
 			self.sock.send(msg)
 		except: 
-			try: 
-				self.sock = None 
-				s = socket(AF_INET, SOCK_STREAM)
-				s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-				s.connect((ADDR, self.port))
-				self.sock = s 
-				self.sock.send(msg)
-			except:
-				time.sleep(SLEEP)
+			# try: 
+			self.sock = None 
+			s = socket(AF_INET, SOCK_STREAM)
+			s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+			s.connect((ADDR, self.port))
+			self.sock = s 
+			self.sock.send(msg)
+			# except:
+			# 	print "***************************** " 
+			# 	time.sleep(SLEEP)
 
 	def kill(self):
 		try:
