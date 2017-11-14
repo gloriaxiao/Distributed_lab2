@@ -29,14 +29,11 @@ class Acceptor(Thread):
 		if req_type == 'p1a':
 			if b > self.ballot_num:	
 				self.ballot_num = b
-		elif req_type == 'p2a': 
-			if b >= self.ballot_num: 
+		elif req_type == 'p2a':
+			if b >= self.ballot_num:
 				self.ballot_num = b
-			if p_val: 
+			if p_val:
 				self.accepted.append(p_val)
-			# if p_val and b >= self.ballot_num:
-			# 	self.accepted.append(p_val)
-			# 	self.ballot_num = b 
 		self.b_lock.release()
 
 	def process_p1a(self, target_pid, info):
@@ -53,16 +50,6 @@ class Acceptor(Thread):
 		b_num, s_num, proposal = info.split(None, 2)
 		b_num = int(b_num)
 		s_num = int(s_num)
-		# msgs = info.split()
-
-		# b_num = int(msgs[0])
-		# s_num = int(msgs[1])
-		# if len(msgs) < 3: 
-		# 	proposal = "None"
-		# else:
-		# 	proposal = msgs[2]
-			# b_num, s_num, proposal = msgs[1:]
-		# print "Acceptor {:d} gets p2a with {:d}, {:d}, {} from Leader {:d}".format(self.pid, b_num, s_num, proposal, target_pid)
 		v = Pvalue(b_num, s_num, proposal)
 		self.update_ballot_num('p2a', b_num, v)
 		self.b_lock.acquire()
