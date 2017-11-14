@@ -137,7 +137,7 @@ class Replica(Thread):
 					crash.crashAfterP2b = True 
 				elif cmd == "crashP1a" or cmd == "crashP2a" or cmd == "crashDecision":
 					lst = arguments.split()
-					for i in lst: 
+					for i in range(len(lst)):						
 						lst[i] = int(lst[i])
 					if cmd == "crashP1a": 
 						crash.crashP1a = True 
@@ -209,8 +209,8 @@ class Replica(Thread):
 			global state 
 			result = state.op(s, p) 
 			self.slot_number += 1 
-			print "Replica {:d} sends ACK back to master: {}".format(self.pid, str(result))
 			if p in self.proposals.values(): 	
+				print "Replica {:d} sends ACK back to master: {}".format(self.pid, str(result))
 				self.master_conn.send("ack " + str(cid) + " " + str(result) + "\n")
 
 
