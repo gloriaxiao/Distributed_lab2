@@ -24,9 +24,9 @@ def not_empty(l, lock):
 	return (length != 0)
 
 
-def scout(b, pid, num_servers, clients):
+def Scout(b, pid, num_servers, clients):
 	global scout_responses, scout_condition, adopted_msg
-	print "Leader {:d} spawn Scout for ballot number {:d}".format(LID, b)
+	print "Leader {:d} spawn Scout for ballot number {:d}".format(pid, b)
 	waitfor = set(range(0, num_servers)) - set([pid])
 	for i in clients:
 		clients[i].send("p1a " + str(b))
@@ -66,10 +66,10 @@ def Commander(b, s, p, pid, num_servers, clients):
 			while (not commander_response.get((b,s), [])):
 				cv.wait()
 			responses = commander_response[(b,s)]
-			print "Leader " + str(LID) + " stopped waiting for commander responses"
+			print "Leader " + str(pid) + " stopped waiting for commander responses"
 			for r in responses:
 				aid, b_num = r
-				print "leader: " + str(LID) + " aid: " + str(aid) + " b_num: " + str(b_num) + " b: " + str(b)
+				print "leader: " + str(pid) + " aid: " + str(aid) + " b_num: " + str(b_num) + " b: " + str(b)
 				if b_num == b:
 					waitfor.remove(aid)
 					print "remove " + str(aid) + " from waitfor so length of waitfor is " + str(len(waitfor))
@@ -96,12 +96,12 @@ class Leader(Thread):
 		self.p_lock = Lock()
 		self.ballot_num = pid
 		self.commander_threads = {}
-		self.scout_thread = Thread(target=Scout, 
-							args=(ballot_num, pid, num_servers, clients))
-		self.scout_thread.start()
 
 	def run(self):
-		global commander_conditions, commander_responses, adopted_msg
+		global commander_conditions, commander_responses, adopted_msg, preempted_msgs
+		self.scout_thread = Thread(target=Scout, 
+							args=(self.ballot_num, self.pid, self.num_servers, self.clients))
+		self.scout_thread.start()
 		while True:
 			if(adopted_msg):
 				print "Leader {:d} gets adopt msg: {}".format(self.pid, adopted_msg)
@@ -146,10 +146,10 @@ class Leader(Thread):
 			elif(not_empty(preempted_msgs, preempted_lock)):
 				preempted_lock.acquire()
 				for b in preempted_msgs:
-					print "Leader {:d} gets preempted msg: {}".format(LID, b)
+					print "Leader {:d} gets preempted msg: {}".format(pid, b)
 					if b > ballot_num:
 						active = False
-						ballot_num = (b/NUM_SERVERS + 1)*NUM_SERVERS + lid
+						ballot_num = (b/NUM_SERVERS + 1)*NUM_SERVERS + pid
 						scout_thread = Thread(target=Scout, args=(ballot_num,))
 						scout_thread.start()
 				preempted_msgs = []
@@ -158,7 +158,7 @@ class Leader(Thread):
 				time.sleep(SLEEP)
 
 	def add_proposal(self, proposal):
-		s, p = proposal.split(None, 1)
+		s, p = proposal
 		s = int(s)
 		print "Leader {:d} get proposal {}".format(self.pid, p)
 		found = False
@@ -186,7 +186,7 @@ class Leader(Thread):
 	def process_p1b(self, target_pid, info):
 		global scout_condition, scout_responses
 		proposed_b, b_num, accepts = info.split(None, 2)
-		print "Leader {:d} receives p1b from Accpetor {:d} with {}".format(self.lid, self.aid, info) 
+		print "Leader {:d} receives p1b from Accpetor {:d} with {}".format(self.pid, target_pid, info) 
 		proposed_b = int(proposed_b)
 		b_num = int(b_num)
 		if accepts == "none":
@@ -195,7 +195,7 @@ class Leader(Thread):
 			pvalues = accepts.strip().split(';')
 		with scout_condition:
 			entry = b_num, pvalues
-			print "Leader {:d} updates its scout response".format(self.lid)
+			print "Leader {:d} updates its scout response".format(self.pid)
 			scout_responses[target_pid] = entry
 			scout_condition.notify()
 

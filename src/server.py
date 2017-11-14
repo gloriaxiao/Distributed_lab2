@@ -14,6 +14,7 @@ BASEPORT = 20000
 chatLog = []
 listeners = {}
 clients = {}
+replica = None 
 leader = None
 acceptor = None
 
@@ -32,6 +33,14 @@ class State:
 		return ",".join([self.data[k] for k in keylist])
 
 state = State()
+
+def get_proposals(): 
+	global leader 
+	return leader.get_proposals() 
+
+def get_accepted(): 
+	global acceptor
+	return acceptor.get_accepted() 
 
 class Replica(Thread):
 	def __init__(self, pid, num_servers, port):
@@ -59,11 +68,14 @@ class Replica(Thread):
 		self.socket.listen(1)
 		self.master_conn, self.master_addr = self.socket.accept()
 		self.connected = True
+		self.leader_initialized = False 
 
 	def run(self):
 		global state
 		while self.connected:
 			if '\n' in self.buffer:
+				if not self.leader_initialized: 
+					leader.start()
 				(l, rest) = self.buffer.split("\n", 1)
 				self.buffer = rest
 				(cmd, arguments) = l.split(" ", 1)
@@ -209,6 +221,8 @@ class ServerListener(Thread):
 				elif cmd == 'decision':
 					print "Server " + str(self.pid) + " received decision from leader " + str(self.target_pid)
 					replica.decide(info)
+				elif cmd == 'heartbeat': 
+					pass 
 				else: 
 					print "invalid command in ReplicaListenerToLeader"
 			else:
@@ -235,34 +249,48 @@ class ServerClient(Thread):
 	  	self.sock = None
 
 	def run(self):
-		while not self.sock:
-			try:
-				new_socket = socket(AF_INET, SOCK_STREAM)
-				new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-				new_socket.bind((ADDR, self.port))
-				new_socket.connect((ADDR, self.target_port))
-				self.sock = new_socket
-				print "State " + str(self.pid) + " sender to State " + str(self.target_pid) + " at port " + str(self.target_port) + " from " + str(self.port)
-			except Exception as e:
-				time.sleep(SLEEP)
+		while True: 
+			try: 
+				self.sock.send("heartbeat " + str(self.pid) + "\n")
+			except:
+				try:
+					self.sock = None
+					s = socket(AF_INET, SOCK_STREAM)
+					s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+					s.bind((ADDR, self.port))
+					s.connect((ADDR, self.target_port))
+					print "serverclient " + str(self.pid) + " connected to " + str(self.target_pid)
+					self.sock = s 
+					self.sock.send("heartbeat " + str(self.pid) + "\n")
+				except: 
+					time.sleep(0.1) 
+		# while not self.sock:
+		# 	try:
+		# 		new_socket = socket(AF_INET, SOCK_STREAM)
+		# 		new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+		# 		new_socket.bind((ADDR, self.port))
+		# 		new_socket.connect((ADDR, self.target_port))
+		# 		self.sock = new_socket
+		# 		# print "State " + str(self.pid) + " sender to State " + str(self.target_pid) + " at port " + str(self.target_port) + " from " + str(self.port)
+		# 	except Exception as e:
+		# 		time.sleep(SLEEP)
 
 	def send(self, msg): 
-	  	if not msg.endswith("\n"): 
-	  		msg = msg + "\n"
-	  	try:
-	  		self.sock.send(msg)
-	  	except Exception as e:
-	  		if self.sock:
-	  			self.sock.close()
-	  			self.sock = None
-	  		try:
-	  			new_socket = socket(AF_INET, SOCK_STREAM)
-	  			new_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-	  			new_socket.connect((ADDR, self.target_port))
-	  			self.sock = new_socket
-	  			self.sock.send(msg)
-	  		except:
-	  			time.sleep(SLEEP)
+		if not msg.endswith("\n"): 
+			msg = msg + "\n"
+		try: 
+			self.sock.send(msg)
+		except: 
+			try: 
+				self.sock = None 
+				s = socket(AF_INET, SOCK_STREAM)
+				s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+				s.connect((address, self.port))
+				self.sock = s 
+				self.sock.send(msg)
+			except:
+				print "*********************** serverclient " + str(self.pid) + " fail to send " + msg[:-1] + " to " + str(self.target_pid)
+				time.sleep(SLEEP)
 
 	def kill(self):
 		try:
@@ -284,11 +312,10 @@ def main(pid, num_servers, port):
 	LOG_PATH = "chatLogs/log{:d}.txt".format(pid)
 	make_sure_path_exists("chatLogs")
 	replica = Replica(pid, num_servers, port)
-	leader = Leader(pid, num_servers, clients)
+	replica.start() 
 	acceptor = Acceptor(pid, num_servers, clients)
-	replica.start()
-	leader.start()
 	acceptor.start()
+	leader = Leader(pid, num_servers, clients)
 
 if __name__ == "__main__":
 	args = sys.argv
