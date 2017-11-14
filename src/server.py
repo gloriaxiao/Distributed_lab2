@@ -166,6 +166,7 @@ class Replica(Thread):
 
 	def decide(self, arguments): 
 		s, p = arguments.split(" ", 1)
+		s = int(s)
 		self.decisions.add((s, p))
 		print "Replica: " + str(self.pid) + " self.decisions: " + str(self.decisions)		
 		while True: 
@@ -187,7 +188,7 @@ class Replica(Thread):
 				if s2 == self.slot_number and p1 != p2: 
 					self.propose(p2)
 					break 
-			self.decisions.remove(remove_t)
+			# self.decisions.remove(remove_t)
 			self.perform(s1, p1)
 
 	def propose(self, p):
@@ -201,6 +202,7 @@ class Replica(Thread):
 		if not found: 
 			total_set = self.decisions.union(self.proposals)
 			all_slots_taken = [s for (s, p) in total_set]
+			print all_slots_taken 
 			if len(all_slots_taken) == 0: 
 				upper_bound = 2
 			else:
@@ -240,7 +242,6 @@ class Replica(Thread):
 			self.socket.close()
 		except:
 			pass
-
 
 class ServerListener(Thread):
 	def __init__(self, pid, target_pid, num_servers): 
@@ -318,7 +319,7 @@ class ServerClient(Thread):
 					self.sock = None
 					s = socket(AF_INET, SOCK_STREAM)
 					s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-					s.bind((ADDR, self.port))
+					# s.bind((ADDR, self.port))
 					s.connect((ADDR, self.target_port))
 					# print "serverclient " + str(self.pid) + " connected to " + str(self.target_pid)
 					self.sock = s 
@@ -373,16 +374,18 @@ class ServerClient(Thread):
 		try: 
 			self.sock.send(msg)
 		except: 
-			# try: 
-			self.sock = None 
-			s = socket(AF_INET, SOCK_STREAM)
-			s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-			s.connect((ADDR, self.port))
-			self.sock = s 
-			self.sock.send(msg)
-			# except:
-			# 	print "***************************** " 
-			# 	time.sleep(SLEEP)
+			try: 
+				self.sock = None 
+				s = socket(AF_INET, SOCK_STREAM)
+				s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+				# s.bind((ADDR, self.port))
+				s.connect((ADDR, self.target_port))
+				self.sock = s 
+				self.sock.send(msg)
+			except:
+				print "***************************** " 
+				time.sleep(SLEEP)
+
 
 	def kill(self):
 		try:
