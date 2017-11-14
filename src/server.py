@@ -210,7 +210,10 @@ class Replica(Thread):
 			result = state.op(s, p) 
 			self.slot_number += 1 
 			print "Replica {:d} sends ACK back to master: {}".format(self.pid, str(result))
-			self.master_conn.send("ack " + str(cid) + " " + str(result) + "\n")
+			print self.proposals
+			print p 
+			if p in self.proposals.values(): 	
+				self.master_conn.send("ack " + str(cid) + " " + str(result) + "\n")
 
 
 	def kill(self):
