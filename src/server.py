@@ -356,7 +356,7 @@ class ServerClient(Thread):
 		else: 
 			self.forward_msg(msg)
 
-	def forward_msg(self, msg)
+	def forward_msg(self, msg): 
 		if not msg.endswith("\n"): 
 			msg = msg + "\n"
 		try: 
