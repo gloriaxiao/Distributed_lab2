@@ -365,7 +365,6 @@ class ServerClient(Thread):
 			self.forward_msg(msg)
 			exit()
 		else: 
-			print "not crashing"
 			self.forward_msg(msg)
 
 	def forward_msg(self, msg): 
@@ -378,11 +377,10 @@ class ServerClient(Thread):
 				self.sock = None 
 				s = socket(AF_INET, SOCK_STREAM)
 				s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-				s.connect((address, self.port))
+				s.connect((ADDR, self.port))
 				self.sock = s 
 				self.sock.send(msg)
 			except:
-				print "*********************** serverclient " + str(self.pid) + " fail to send " + msg[:-1] + " to " + str(self.target_pid)
 				time.sleep(SLEEP)
 
 	def kill(self):
