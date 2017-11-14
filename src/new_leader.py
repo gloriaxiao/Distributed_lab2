@@ -34,7 +34,8 @@ def add_preempted(b):
 def Scout(b, pid, num_servers, clients):
 	global scout_responses, scout_condition, adopted_msg
 	print "Leader {:d} spawn Scout for ballot number {:d}".format(pid, b)
-	waitfor = set(range(0, num_servers)) - set([pid])
+	# waitfor = set(range(0, num_servers)) - set([pid])
+	waitfor = set(range(0, num_servers))
 	for i in clients:
 		clients[i].send("p1a " + str(b))
 	pvalues = set()
@@ -65,7 +66,8 @@ def Scout(b, pid, num_servers, clients):
 def Commander(b, s, p, pid, num_servers, clients):
 	global commander_responses, commander_conditions
 	print "Leader {:d} spawn out a Commander for {:d} {:d} {}".format(pid, b, s, p)
-	waitfor = set(range(0, num_servers)) - set([pid])
+	# waitfor = set(range(0, num_servers)) - set([pid])
+	waitfor = set(range(0, num_servers))
 	for i in clients: 
 		clients[i].send("p2a {} {} {}".format(str(b), str(s), str(p)))
 	cv = commander_conditions[(b,s)]

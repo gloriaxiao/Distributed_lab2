@@ -95,16 +95,24 @@ class Replica(Thread):
 		self.slot_number = 1 
 		self.proposals = set() 
 		self.decisions = set()
+		# for i in range(num_servers):
+		# 	if i != pid:
+		# 		listeners[i] = ServerListener(pid, i, num_servers)
+		# 		# listeners[i].setDaemon(True)
+		# 		listeners[i].start()
+		# for i in range(num_servers): 
+		# 	if i != pid: 
+		# 		clients[i] = ServerClient(pid, i, num_servers) 
+		# 		# clients[i].setDaemon(True)
+		# 		clients[i].start()
 		for i in range(num_servers):
-			if i != pid:
-				listeners[i] = ServerListener(pid, i, num_servers)
+			listeners[i] = ServerListener(pid, i, num_servers)
 				# listeners[i].setDaemon(True)
-				listeners[i].start()
+			listeners[i].start()
 		for i in range(num_servers): 
-			if i != pid: 
-				clients[i] = ServerClient(pid, i, num_servers) 
+			clients[i] = ServerClient(pid, i, num_servers) 
 				# clients[i].setDaemon(True)
-				clients[i].start()
+			clients[i].start()
 		self.socket = socket(AF_INET, SOCK_STREAM)
 		self.socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 		self.socket.bind((ADDR, self.port))
@@ -120,12 +128,13 @@ class Replica(Thread):
 			if '\n' in self.buffer:
 				if not self.leader_initialized: 
 					leader.start()
+					self.leader_initialized = True 
 				(l, rest) = self.buffer.split("\n", 1)
 				self.buffer = rest
 				try: 
 					(cmd, arguments) = l.split(" ", 1)
 				except: 
-					print l 
+					cmd = l 
 				print "Replica {:d} receives msgs from master {}".format(self.pid, l)
 				if cmd == "get":
 					self.master_conn.send('chatLog {}\n'.format(state.toString()))
