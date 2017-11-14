@@ -17,8 +17,11 @@ clients = {}
 replica = None 
 leader = None
 acceptor = None
-LOG_PATH = None 
+LOG_PATH_REPLICA = None 
+LOG_PATH_LEADER = None 
+LOG_PATH_ACCEPTOR = None 
 crash = None 
+cache = [] 
 
 class Crash:
 	def __init__(self):
@@ -48,39 +51,49 @@ class State:
 state = State()
 
 def save_to_chatLog(): 
-	global chatLog, LOG_PATH, leader, acceptor
-	with open(LOG_PATH, 'wt') as file: 
-		file.write('{}\n'.format(len(chatLog)))
+	global chatLog, LOG_PATH_ACCEPTOR, LOG_PATH_LEADER, LOG_PATH_REPLICA, leader, acceptor
+	with open(LOG_PATH_REPLICA, 'wt') as replica_file: 
+		replica_file.write('{}\n'.format(len(chatLog)))
 		for line in chatLog: 
-			file.write(line + '\n')
-		file.write('{}\n'.format(len(leader.proposals))) 
+			replica_file.write(line + '\n')
+		replica_file.write('{}\n'.format(len(replica.proposals)))
+		for i in replica.proposals: 
+			replica_file.write(str(i) + " " + str(replica.proposals[i]))
+		replica_file.write('{}\n'.format(len(replica.decisions)))
+		for i in replica.decisions: 
+			replica_file.write(str(i) + " " + str(replica.decisions[i]))
+	with open(LOG_PATH_LEADER, 'wt') as leader_file: 
+		leader_file.write('{}\n'.format(len(leader.proposals))) 
 		for line in leader.proposals: 
 			s, p = line 
-			file.write(str(s) + " " + str(p) + "\n")
-		file.write('{}\n'.format(len(acceptor.accepted)))
+			leader_file.write(str(s) + " " + str(p) + "\n")
+	with open(LOG_PATH_ACCEPTOR, 'wt') as acceptor_file: 
+		acceptor_file.write('{}\n'.format(len(acceptor.accepted)))
 		for line in acceptor.accepted: 
-			file.write(str(line) + "\n")
+			acceptor_file.write(str(line) + "\n")
 
-def load_from_chatLog(): 
-	global chatLog, LOG_PATH, leader, acceptor
+def replica_load_from_chatLog(): 
+	global chatLog, LOG_PATH_REPLICA
 	try:
-		with open(LOG_PATH, 'rt') as file: 
+		with open(LOG_PATH_REPLICA, 'rt') as file: 
 			chatLog_line = int(file.readline())
 			for i in range(chatLog_line): 
 				line = file.readline()
 				chatLog.append(line)
-			proposals_line = int(file.readline())
-			for i in range(proposals_line): 
+			print chatLog
+			proposal_line = int(file.readline())
+			for i in range(proposal_line): 
 				line = file.readline()
-				s, p = line.split(None, 1)
-				s = int(s)
-				leader.proposals.add((s, p)) 
-			accepted_line = int(file.readline())
-			for i in range(accepted_line): 
+				key, value = line.split(None, 1)
+				key = int(key)
+				replica.proposals[key] = value 
+			decision_line = int(file.readline())
+			for i in range(decision_line): 
 				line = file.readline()
-				b, s, c = line.split(None, 2)
-				acceptor.accepted_line.append(Pvalue(b, s, c))
-	except: 
+				key, value = line.split(None, 1)
+				key = int (key)
+				replica.decisions[key] = value 
+	except IOError as e: 
 		pass 
 
 class Replica(Thread):
@@ -111,7 +124,7 @@ class Replica(Thread):
 
 	def run(self):
 		global state, crash 
-		load_from_chatLog()
+		replica_load_from_chatLog()
 		while self.connected:
 			if '\n' in self.buffer:
 				if not self.leader_initialized: 
@@ -250,17 +263,31 @@ class ServerListener(Thread):
 				cmd, info = l.split(None, 1)
 				# leader receives
 				if cmd == 'p1b':
-					leader.process_p1b(self.target_pid, info)
+					if leader: 
+						leader.process_p1b(self.target_pid, info)
+					else: 
+						self.buffer += (l + "\n")
 				elif cmd == 'p2b':
-					leader.process_p2b(self.target_pid, info)
+					if leader: 
+						leader.process_p2b(self.target_pid, info)
+					else: 
+						self.buffer += (l + "\n")
 				# accpetor recieves
 				elif cmd == 'p1a':
-					acceptor.process_p1a(self.target_pid, info)
+					if acceptor: 
+						acceptor.process_p1a(self.target_pid, info)
+					else: 
+						self.buffer += (l + "\n")
 				elif cmd == 'p2a':
-					acceptor.process_p2a(self.target_pid, info)
+					if acceptor: 
+						acceptor.process_p2a(self.target_pid, info)
+					else: 
+						self.buffer += (l + "\n")
 				elif cmd == 'decision':
-					print "Server " + str(self.pid) + " received decision from leader " + str(self.target_pid)
-					replica.decide(info)
+					# print "Server " + str(self.pid) + " received decision from leader " + str(self.target_pid)
+					if replica: 
+						replica.decide(info)
+					else: self.buffer += (l + "\n")
 				elif cmd == 'heartbeat': 
 					pass 
 				else: 
@@ -295,19 +322,23 @@ class ServerClient(Thread):
 	  	self.sock = None
 
 	def run(self):
+		global cache 
 		while True: 
 			try: 
-				self.sock.send("heartbeat " + str(self.pid) + "\n")
+				self.sock.send("heartbeat " + str(self.pid) + "\n") 
 			except:
 				try:
 					self.sock = None
 					s = socket(AF_INET, SOCK_STREAM)
 					s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-					# s.bind((ADDR, self.port))
 					s.connect((ADDR, self.target_port))
-					# print "serverclient " + str(self.pid) + " connected to " + str(self.target_pid)
+					print "server " + str(self.pid) + " connected to " + str(self.target_pid) + " cache: " + str(cache)
 					self.sock = s 
 					self.sock.send("heartbeat " + str(self.pid) + "\n")
+					for i in cache: 
+						# print "sending cache"
+						self.sock.send(i)
+					cache = [] 
 				except: 
 					time.sleep(0.1) 
 
@@ -353,6 +384,7 @@ class ServerClient(Thread):
 			self.forward_msg(msg)
 
 	def forward_msg(self, msg): 
+		global cache 
 		if not msg.endswith("\n"): 
 			msg = msg + "\n"
 		try: 
@@ -362,11 +394,17 @@ class ServerClient(Thread):
 				self.sock = None 
 				s = socket(AF_INET, SOCK_STREAM)
 				s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-				# s.bind((ADDR, self.port))
 				s.connect((ADDR, self.target_port))
+				print "serverclient " + str(self.pid) + " connected to " + str(self.target_pid) + " cache: " + str(cache)
 				self.sock = s 
+				for i in cache: 
+					self.sock.send(i)
+				cache = [] 
 				self.sock.send(msg)
 			except:
+				if not msg.startswith("heartbeat"): 
+					cache.append(msg)
+					print "serverclient: " + str(self.pid) + " target: " + str(self.target_pid) + " append message: " + msg[:-1] + " cache: " + str(cache)
 				print "***************************** " 
 				time.sleep(SLEEP)
 
@@ -397,18 +435,23 @@ def exit():
 	os._exit(0)
 
 def main(pid, num_servers, port):
-	global replica, leader, acceptor, listeners, clients, LOG_PATH, crash 
-	LOG_PATH = "chatLogs/log{:d}.txt".format(pid)
+	global replica, leader, acceptor, listeners, clients, LOG_PATH_REPLICA, LOG_PATH_LEADER, LOG_PATH_ACCEPTOR, crash 
+	LOG_PATH_REPLICA = "chatLogs/replica_log{:d}.txt".format(pid)
+	LOG_PATH_LEADER = "chatLogs/leader_log{:d}.txt".format(pid)
+	LOG_PATH_ACCEPTOR = "chatLogs/acceptor_log{:d}.txt".format(pid)
 	make_sure_path_exists("chatLogs")
 	crash = Crash() 
 	replica = Replica(pid, num_servers, port)
 	replica.setDaemon(True)
-	replica.start() 
 	acceptor = Acceptor(pid, num_servers, clients)
+	print "acceptor initialized"
 	acceptor.setDaemon(True)
 	acceptor.start()
 	leader = Leader(pid, num_servers, clients)
+	print "leader initialized"
 	leader.setDaemon(True)
+	replica.start() 
+
 
 if __name__ == "__main__":
 	args = sys.argv

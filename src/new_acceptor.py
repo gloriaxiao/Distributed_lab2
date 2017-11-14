@@ -20,6 +20,22 @@ class Acceptor(Thread):
 		self.ballot_num = -1
 		self.accepted = []
 		self.b_lock = Lock()
+		self.acceptor_load_from_chatLog() 
+
+	def acceptor_load_from_chatLog(self): 
+		try:
+			with open(self.LOG_PATH_ACCEPTOR, 'rt') as file: 
+				accepted_line = int(file.readline())
+				for i in range(accepted_line): 
+					line = file.readline()
+					b, s, c = line.split(None, 2)
+					acceptor.accepted_line.append(Pvalue(b, s, c))
+				print acceptor.accepted_line
+		except: 
+			pass 
+
+	def run(self):
+		pass
 
 	def run(self):
 		pass

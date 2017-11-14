@@ -50,7 +50,8 @@ def Scout(b, pid, num_servers, clients):
 				if b_num < b:
 					continue
 				if b_num == b:
-					waitfor.remove(aid)
+					if aid in waitfor: 
+						waitfor.remove(aid)
 					pvalues.update(p_vals)
 					if len(waitfor) < num_servers/2:
 						# print "Leader {:d} gets majority accepted for {:d}".format(pid, b)
@@ -85,7 +86,8 @@ def Commander(b, s, p, pid, num_servers, clients):
 				if b_num < b:
 					continue
 				if b_num == b:
-					waitfor.remove(aid)
+					if aid in waitfor: 
+						waitfor.remove(aid)
 					# print "remove " + str(aid) + " from waitfor so length of waitfor is " + str(len(waitfor))
 					if len(waitfor) < num_servers/2:
 						# print "Leader {:d} sends decisions to all replicas".format(pid)
@@ -112,6 +114,21 @@ class Leader(Thread):
 		self.ballot_num = pid
 		self.commander_threads = {}
 		self.scout_thread = None
+		self.LOG_PATH_LEADER = "chatLogs/leader_log{:d}.txt".format(pid)
+		self.leader_load_from_chatLog() 
+
+	def leader_load_from_chatLog(self): 
+		try:
+			with open(self.LOG_PATH_LEADER, 'rt') as file: 
+				proposals_line = int(file.readline())
+				for i in range(proposals_line): 
+					line = file.readline()
+					s, p = line.split(None, 1)
+					s = int(s)
+					leader.proposals.add((s, p)) 
+				print leader.proposals
+		except: 
+			pass 
 
 	def run(self):
 		global commander_conditions, commander_responses, adopted_msg
@@ -232,10 +249,11 @@ class Leader(Thread):
 		key = proposed_b, proposed_s
 		# print "commander condition keys"
 		# print " ".join([str(k[0]) + ', ' + str(k[1]) for k in commander_conditions])
-		cv = commander_conditions[key]
-		with cv:
-			entry = target_pid, b_num
-			rlist = commander_responses.get(key, [])
-			rlist.append(entry)
-			commander_responses[key] = rlist
-			cv.notify()
+		cv = commander_conditions.get(key, None)
+		if cv: 
+			with cv:
+				entry = target_pid, b_num
+				rlist = commander_responses.get(key, [])
+				rlist.append(entry)
+				commander_responses[key] = rlist
+				cv.notify()
