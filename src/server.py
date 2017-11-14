@@ -372,17 +372,17 @@ class ServerClient(Thread):
 		try: 
 			self.sock.send(msg)
 		except: 
-			# try: 
-			self.sock = None 
-			s = socket(AF_INET, SOCK_STREAM)
-			s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-			# s.bind((ADDR, self.port))
-			s.connect((ADDR, self.target_port))
-			self.sock = s 
-			self.sock.send(msg)
-			# except:
-			# 	print "***************************** " 
-			# 	time.sleep(SLEEP)
+			try: 
+				self.sock = None 
+				s = socket(AF_INET, SOCK_STREAM)
+				s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+				# s.bind((ADDR, self.port))
+				s.connect((ADDR, self.target_port))
+				self.sock = s 
+				self.sock.send(msg)
+			except:
+				print "***************************** " 
+				time.sleep(SLEEP)
 
 
 	def kill(self):
