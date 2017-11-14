@@ -186,9 +186,9 @@ class Leader(Thread):
 			if self.active:
 				print "system is active at leader {:d}".format(self.pid)
 				cv = Condition()
-				newc = Thread(target=Commander, args=(ballot_num, s, p, cv))
-				commander_threads[(ballot_num, s)] = newc
-				commander_conditions[(ballot_num,s)] = cv
+				newc = Thread(target=Commander, args=(self.ballot_num, s, p, cv))
+				commander_threads[(self.ballot_num, s)] = newc
+				commander_conditions[(self.ballot_num,s)] = cv
 				newc.start()
 		else:
 			self.p_lock.release()
@@ -212,11 +212,12 @@ class Leader(Thread):
 
 	def process_p2b(self, target_pid, info):
 		global commander_conditions, commander_responses
-		proposed_b, proposed_s, b_num = info.split()
-		proposed_b = int(proposed_b)
+		proposed_s, b_num = info.split()
 		proposed_s = int(proposed_s)
 		b_num = int(b_num)
-		key = (proposed_b, proposed_s)
+		key = (self.ballot_num, proposed_s)
+		print "commander condition keys"
+		print " ".join([str(k[0]) + ', ' + str(k[1]) for k in commander_conditions])
 		cv = commander_conditions[key]
 		with cv:
 			entry = self.aid, b_num
