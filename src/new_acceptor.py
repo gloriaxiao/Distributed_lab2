@@ -42,7 +42,7 @@ class Acceptor(Thread):
 		try: 
 			self.clients[target_pid].send('p1b ' + str(num) + ' ' + self.state_str())
 		except:
-			"acceptor key error: " + str(self.lid) + " " + str(len(clients)) + " " + self.state_str()	
+			"acceptor key error: " + str(self.pid) + " " + str(len(self.clients)) + " " + self.state_str()	
 
 	def process_p2a(self, target_pid, info):
 		msgs = info.split()

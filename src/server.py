@@ -24,8 +24,8 @@ class Crash:
 	def __init__(self):
 		self.crashAfterP1b = False 
 		self.crashAfterP2b = False 
-		self.crashAfterP1a = False  
-		self.crashAfterP2a = False
+		self.crashP1a = False  
+		self.crashP2a = False
 		self.crashDecision = False 
 		self.p1a = []
 		self.p2a = []
@@ -185,7 +185,7 @@ class Replica(Thread):
 					self.propose(p2)
 					break 
 			self.decisions.remove(remove_t)
-			self.perform(p1)
+			self.perform(s1, p1)
 
 	def propose(self, p):
 		global leader
@@ -214,7 +214,7 @@ class Replica(Thread):
 			leader.add_proposal(proposal)
 
 
-	def perform(self,p): 
+	def perform(self,s, p): 
 		print "in perform"
 		cid, msg = p.split(" ", 1)
 		found = False 
@@ -229,7 +229,7 @@ class Replica(Thread):
 			self.slot_number += 1 
 		else: 
 			global state 
-			result = state.op(msg) 
+			result = state.op(s, msg) 
 			self.slot_number += 1 
 			self.master_conn.send("ack " + str(cid) + " " + str(result) + "\n")
 
@@ -292,6 +292,12 @@ class ServerListener(Thread):
 					self.conn = None 
 					self.conn, self.addr = self.sock.accept()
 
+	def kill(self):
+		try:
+			self.conn.close()
+		except:
+			pass
+
 
 class ServerClient(Thread):
 	def __init__(self, pid, target_pid, num_servers):
@@ -324,14 +330,16 @@ class ServerClient(Thread):
 		global crash 
 		cmd, arguments = msg.split(None, 1)
 		if cmd == "p1a" and crash.crashP1a: 
+			print "crashing p1a"
 			if self.target_port not in crash.p1a: 
 				return 
 			else: 
 				crash.p1a.remove(self.target_port)
 				self.forward_msg(msg)
 				if len(crash.p1a) == 0: 
-					exit() 
+					exit()
 		elif cmd == "p2a" and crash.crashP2a: 
+			print "crashing p2a"
 			if self.target_port not in crash.p2a: 
 				return 
 			else: 
@@ -340,6 +348,7 @@ class ServerClient(Thread):
 				if len(crash.p2a) == 0:
 					exit()
 		elif cmd == "decision" and crash.crashDecision: 
+			print "crashing decision"
 			if self.target_port not in crash.decision: 
 				return 
 			else: 
@@ -347,13 +356,16 @@ class ServerClient(Thread):
 				self.forward_msg(msg)
 				if len(crash.decision) == 0:
 					exit()
-		elif cmd == "p1b": 
+		elif cmd == "p1b" and crash.crashAfterP1b: 
+			print "crashing p1b"
 			self.forward_msg(msg)
 			exit() 
-		elif cmd == "p2b": 
+		elif cmd == "p2b" and crash.crashAfterP2b: 
+			print "crashing p2a"
 			self.forward_msg(msg)
 			exit()
 		else: 
+			print "not crashing"
 			self.forward_msg(msg)
 
 	def forward_msg(self, msg): 
@@ -389,6 +401,7 @@ def make_sure_path_exists(path):
 			print(e)
 
 def exit():
+	print "exit is called"
 	global listeners, clients
 	for i in listeners:
 		listeners[i].kill()
