@@ -123,7 +123,7 @@ class Leader(Thread):
 				adopted_b = int(adopted_b)
 				pmax_dictionary = {} 
 				for pvalue in pvals:
-					b_first, s, p = pvalue.split()
+					b_first, s, p = pvalue.split(None, 2)
 					b_first = int(b_first)
 					s = int(s)
 					if s not in pmax_dictionary: 
@@ -146,11 +146,14 @@ class Leader(Thread):
 					if not found: 
 						new_proposals.add((s, p))
 				self.proposals = new_proposals
+				print "proposals at Leader {:d}".format(self.pid)
+				print self.proposals
 				for t in self.proposals: 
 					s, p = t
 					s = int(s)
 					cv = commander_conditions.get((adopted_b,s), Condition())
 					commander_conditions[(adopted_b,s)] = cv
+					print "Spawn out commander for adopted"
 					newc = Thread(target=Commander, 
 							args=(adopted_b, s, p, self.pid, self.num_servers, self.clients))
 					self.commander_threads[(adopted_b, s)] = newc
@@ -161,7 +164,7 @@ class Leader(Thread):
 				with preempted_cv:
 					for b in preempted_ballot:
 						if b > self.ballot_num:
-							active = False
+							self.active = False
 							new_b = (b/self.num_servers + 1)*self.num_servers + self.pid
 							self.ballot_num = new_b
 							self.scout_thread = Thread(target=Scout, 
@@ -190,8 +193,9 @@ class Leader(Thread):
 			self.p_lock.release()
 			if self.active:
 				# print "system is active at leader {:d}".format(self.pid)
-				cv = Condition()
-				newc = Thread(target=Commander, args=(self.ballot_num, s, p, cv))
+				print "spawn out commander for proposal"
+				cv = commander_conditions.get([(self.ballot_num,s)], Condition())
+				newc = Thread(target=Commander, args=(self.ballot_num, s, p, self.pid, self.num_servers, self.clients))
 				commander_threads[(self.ballot_num, s)] = newc
 				commander_conditions[(self.ballot_num,s)] = cv
 				newc.start()

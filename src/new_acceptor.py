@@ -45,19 +45,23 @@ class Acceptor(Thread):
 			"acceptor key error: " + str(self.pid) + " " + str(len(self.clients)) + " " + self.state_str()	
 
 	def process_p2a(self, target_pid, info):
-		msgs = info.split()
-		b_num = int(msgs[0])
-		s_num = int(msgs[1])
-		if len(msgs) < 3: 
-			proposal = "None"
-		else:
-			proposal = msgs[2]
+		b_num, s_num, proposal = info.split(None, 2)
+		b_num = int(b_num)
+		s_num = int(s_num)
+		# msgs = info.split()
+
+		# b_num = int(msgs[0])
+		# s_num = int(msgs[1])
+		# if len(msgs) < 3: 
+		# 	proposal = "None"
+		# else:
+		# 	proposal = msgs[2]
 			# b_num, s_num, proposal = msgs[1:]
 		# print "Acceptor {:d} gets p2a with {:d}, {:d}, {} from Leader {:d}".format(self.pid, b_num, s_num, proposal, target_pid)
 		v = Pvalue(b_num, s_num, proposal)
 		self.update_ballot_num('p2a', b_num, v)
 		self.b_lock.acquire()
-		msg = 'p2b ' + msgs[0] + ' ' + msgs[1] + ' ' + str(self.ballot_num)
+		msg = 'p2b ' + str(b_num) + ' ' + str(s_num) + ' ' + str(self.ballot_num)
 		self.b_lock.release()
 		self.clients[target_pid].send(msg)
 

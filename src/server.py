@@ -172,7 +172,7 @@ class Replica(Thread):
 				propose_p = self.proposals[slot]
 				if propose_p != op:
 					self.propose(propose_p)
-					del proposals[slot]
+					del self.proposals[slot]
 			self.perform(slot, op)
 
 
