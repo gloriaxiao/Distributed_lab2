@@ -57,7 +57,7 @@ class Acceptor(Thread):
 		v = Pvalue(b_num, s_num, proposal)
 		self.update_ballot_num('p2a', b_num, v)
 		self.b_lock.acquire()
-		msg = 'p2b ' + msgs[1] + ' ' + str(self.ballot_num)
+		msg = 'p2b ' + msgs[0] + ' ' + msgs[1] + ' ' + str(self.ballot_num)
 		self.b_lock.release()
 		self.clients[target_pid].send(msg)
 

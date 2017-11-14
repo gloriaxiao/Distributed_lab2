@@ -101,6 +101,7 @@ class Leader(Thread):
 		self.proposals = set()
 		self.p_lock = Lock()
 		self.ballot_num = pid
+		self.b_lock = Lock()
 		self.commander_threads = {}
 		self.scout_thread = None
 
@@ -155,12 +156,17 @@ class Leader(Thread):
 				preempted_lock.acquire()
 				for b in preempted_ballot:
 					print "Leader {:d} gets preempted msg: {}".format(self.pid, b)
+					self.b_lock.acquire()
 					if b > self.ballot_num:
 						active = False
-						self.ballot_num = (b/self.num_servers + 1)*self.num_servers + self.pid
+						new_b = (b/self.num_servers + 1)*self.num_servers + self.pid
+						self.ballot_num = new_b
+						self.b_lock.release()
 						self.scout_thread = Thread(target=Scout, 
-											args=(self.ballot_num, self.pid, self.num_servers, self.clients))
+											args=(new_b, self.pid, self.num_servers, self.clients))
 						self.scout_thread.start()
+					else:
+						self.b_lock.release()
 				preempted_ballot = set()
 				preempted_lock.release()
 			else:
@@ -186,9 +192,11 @@ class Leader(Thread):
 			if self.active:
 				print "system is active at leader {:d}".format(self.pid)
 				cv = Condition()
+				self.b_lock.acquire()
 				newc = Thread(target=Commander, args=(self.ballot_num, s, p, cv))
 				commander_threads[(self.ballot_num, s)] = newc
 				commander_conditions[(self.ballot_num,s)] = cv
+				self.b_lock.release()
 				newc.start()
 		else:
 			self.p_lock.release()
@@ -212,10 +220,13 @@ class Leader(Thread):
 
 	def process_p2b(self, target_pid, info):
 		global commander_conditions, commander_responses
-		proposed_s, b_num = info.split()
+		proposed_b, proposed_s, b_num = info.split()
+		proposed_b = int(proposed_b)
 		proposed_s = int(proposed_s)
 		b_num = int(b_num)
-		key = (self.ballot_num, proposed_s)
+		self.b_lock.acquire()
+		key = proposed_b, proposed_s
+		self.b_lock.release()
 		print "commander condition keys"
 		print " ".join([str(k[0]) + ', ' + str(k[1]) for k in commander_conditions])
 		cv = commander_conditions[key]
