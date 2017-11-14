@@ -137,7 +137,7 @@ class Replica(Thread):
 					crash.crashAfterP2b = True 
 				elif cmd == "crashP1a" or cmd == "crashP2a" or cmd == "crashDecision":
 					lst = arguments.split()
-					for i in lst: 
+					for i in range(len(lst)):						
 						lst[i] = int(lst[i])
 					if cmd == "crashP1a": 
 						crash.crashP1a = True 
