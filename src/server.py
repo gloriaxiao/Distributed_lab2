@@ -346,7 +346,7 @@ class ServerClient(Thread):
 			self.forward_msg(msg)
 			exit() 
 		elif cmd == "p2b" and crash.crashAfterP2b: 
-			print "crashing p2a"
+			print "crashing p2b"
 			self.forward_msg(msg)
 			exit()
 		else: 
