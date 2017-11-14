@@ -204,7 +204,7 @@ class Replica(Thread):
 				upper_bound = 2
 			else:
 				upper_bound = max(all_slots_taken) + 2 
-			s_prime = -1 
+			s_prime = 1
 			for i in range (1, upper_bound): 
 				if i not in all_slots_taken: 
 					s_prime = i
