@@ -162,14 +162,14 @@ class Leader(Thread):
 				self.active = True
 			elif(has_preempted()):
 				with preempted_cv:
-					for b in preempted_ballot:
-						if b > self.ballot_num:
-							self.active = False
-							new_b = (b/self.num_servers + 1)*self.num_servers + self.pid
-							self.ballot_num = new_b
-							self.scout_thread = Thread(target=Scout, 
-												args=(new_b, self.pid, self.num_servers, self.clients))
-							self.scout_thread.start()
+					max_ballot = max(preempted_ballot)
+					if max_ballot > self.ballot_num:
+						self.active = False
+						new_b = (max_ballot/self.num_servers + 1)*self.num_servers + self.pid
+						self.ballot_num = new_b
+						self.scout_thread = Thread(target=Scout, 
+											args=(new_b, self.pid, self.num_servers, self.clients))
+						self.scout_thread.start()
 					preempted_ballot = set()
 			else:
 				time.sleep(SLEEP)
@@ -194,7 +194,7 @@ class Leader(Thread):
 			if self.active:
 				# print "system is active at leader {:d}".format(self.pid)
 				# print "spawn out commander for proposal"
-				cv = commander_conditions.get([(self.ballot_num,s)], Condition())
+				cv = commander_conditions.get((self.ballot_num,s), Condition())
 				newc = Thread(target=Commander, args=(self.ballot_num, s, p, self.pid, self.num_servers, self.clients))
 				commander_threads[(self.ballot_num, s)] = newc
 				commander_conditions[(self.ballot_num,s)] = cv
