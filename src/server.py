@@ -98,12 +98,12 @@ class Replica(Thread):
 		for i in range(num_servers):
 			if i != pid:
 				listeners[i] = ServerListener(pid, i, num_servers)
-				listeners[i].setDaemon(True)
+				# listeners[i].setDaemon(True)
 				listeners[i].start()
 		for i in range(num_servers): 
 			if i != pid: 
 				clients[i] = ServerClient(pid, i, num_servers) 
-				clients[i].setDaemon(True)
+				# clients[i].setDaemon(True)
 				clients[i].start()
 		self.socket = socket(AF_INET, SOCK_STREAM)
 		self.socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
