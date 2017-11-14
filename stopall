@@ -13,10 +13,12 @@ if [ -z "$PIDS" ]
 	else
 		kill $PIDS
 fi
-PIDS=`ps aux | grep 'replica.py' | grep -v 'grep' | awk '{print $2}'`
+PIDS=`ps aux | grep 'server.py' | grep -v 'grep' | awk '{print $2}'`
 if [ -z "$PIDS" ]
 	then
-		echo "No process running replica.py"
+		echo "No process running server.py"
 	else
 		kill $PIDS
 fi
+rm -f chatLogs/*
+mkdir chatLogs
