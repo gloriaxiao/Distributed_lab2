@@ -95,6 +95,7 @@ def Commander(b, s, p, pid, num_servers, clients):
 					return
 			commander_responses[(b,s)] = []
 
+
 class Leader(Thread):
 	def __init__(self, pid, num_servers, clients):
 		Thread.__init__(self)
