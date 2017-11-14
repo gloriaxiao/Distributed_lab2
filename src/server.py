@@ -209,8 +209,8 @@ class Replica(Thread):
 			global state 
 			result = state.op(s, p) 
 			self.slot_number += 1 
-			print "Replica {:d} sends ACK back to master: {}".format(self.pid, str(result))
 			if p in self.proposals.values(): 	
+				print "Replica {:d} sends ACK back to master: {}".format(self.pid, str(result))
 				self.master_conn.send("ack " + str(cid) + " " + str(result) + "\n")
 
 
