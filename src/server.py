@@ -5,7 +5,7 @@ import time
 import os, errno
 from threading import Thread, Lock
 from new_leader import Leader
-from new_acceptor import Acceptor
+from new_acceptor import Acceptor, Pvalue 
 
 master_thread = None
 SLEEP = 0.05
@@ -17,6 +17,7 @@ clients = {}
 replica = None 
 leader = None
 acceptor = None
+LOG_PATH = None 
 
 class State: 
 	def __init__(self): 
@@ -34,13 +35,41 @@ class State:
 
 state = State()
 
-def get_proposals(): 
-	global leader 
-	return leader.get_proposals() 
+def save_to_chatLog(): 
+	global chatLog, LOG_PATH, leader, acceptor
+	with open(LOG_PATH, 'wt') as file: 
+		file.write('{}\n'.format(len(chatLog)))
+		for line in chatLog: 
+			file.write(line + '\n')
+		file.write('{}\n'.format(len(leader.proposals))) 
+		for line in leader.proposals: 
+			s, p = line 
+			file.write(str(s) + " " + str(p) + "\n")
+		file.write('{}\n'.format(len(acceptor.accepted)))
+		for line in acceptor.accepted: 
+			file.write(str(line) + "\n")
 
-def get_accepted(): 
-	global acceptor
-	return acceptor.get_accepted() 
+def load_from_chatLog(): 
+	global chatLog, LOG_PATH, leader, acceptor
+	try:
+		with open(LOG_PATH, 'rt') as file: 
+			chatLog_line = int(file.readline())
+			for i in range(chatLog_line): 
+				line = file.readline()
+				chatLog.append(line)
+			proposals_line = int(file.readline())
+			for i in range(proposals_line): 
+				line = file.readline()
+				s, p = line.split(None, 1)
+				s = int(s)
+				leader.proposals.add((s, p)) 
+			accepted_line = int(file.readline())
+			for i in range(accepted_line): 
+				line = file.readline()
+				b, s, c = line.split(None, 2)
+				acceptor.accepted_line.append(Pvalue(b, s, c))
+	except: 
+		pass 
 
 class Replica(Thread):
 	def __init__(self, pid, num_servers, port):
@@ -72,6 +101,7 @@ class Replica(Thread):
 
 	def run(self):
 		global state
+		load_from_chatLog()
 		while self.connected:
 			if '\n' in self.buffer:
 				if not self.leader_initialized: 
@@ -308,7 +338,7 @@ def make_sure_path_exists(path):
 			print(e)
 
 def main(pid, num_servers, port):
-	global replica, leader, acceptor, listeners, clients
+	global replica, leader, acceptor, listeners, clients, LOG_PATH
 	LOG_PATH = "chatLogs/log{:d}.txt".format(pid)
 	make_sure_path_exists("chatLogs")
 	replica = Replica(pid, num_servers, port)
