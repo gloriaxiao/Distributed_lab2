@@ -3,7 +3,7 @@ import sys
 from socket import AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR, socket, error
 import time
 import os, errno
-from threading import Thread, Lock
+from threading import Thread, Condition
 from new_leader import Leader
 from new_acceptor import Acceptor, Pvalue 
 
@@ -23,6 +23,14 @@ LOG_PATH_ACCEPTOR = None
 crash = None 
 cache = [] 
 
+leader_cv = Condition() 
+acceptor_cv = Condition() 
+replica_cv = Condition() 
+
+decisions_cv = Condition() 
+proposals_cv = Condition() 
+chatLog_cv = Condition() 
+
 class Crash:
 	def __init__(self):
 		self.crashAfterP1b = False 
@@ -36,7 +44,6 @@ class Crash:
 
 class State: 
 	def __init__(self): 
-		self.count = 0 
 		self.data = {}
 
 	def op(self, sid, msg): 
@@ -51,8 +58,12 @@ class State:
 state = State()
 
 def save_to_chatLog(): 
-	global chatLog, LOG_PATH_ACCEPTOR, LOG_PATH_LEADER, LOG_PATH_REPLICA, leader, acceptor
+	global chatLog, LOG_PATH_ACCEPTOR, LOG_PATH_LEADER, LOG_PATH_REPLICA, leader, acceptor, state 
 	with open(LOG_PATH_REPLICA, 'wt') as replica_file: 
+		replica_file.write('{}\n'.format(str(replica.slot_number)))
+		replica_file.write('{}\n'.format(str(len(state.data))))
+		for key in state.data: 
+			replica_file.write(str(key) + " " + state.data[key] + "\n")
 		replica_file.write('{}\n'.format(len(chatLog)))
 		for line in chatLog: 
 			replica_file.write(line + '\n')
@@ -73,9 +84,20 @@ def save_to_chatLog():
 			acceptor_file.write(str(line) + "\n")
 
 def replica_load_from_chatLog(): 
-	global chatLog, LOG_PATH_REPLICA
+	global chatLog, LOG_PATH_REPLICA, replica_cv, state
+	with replica_cv: 
+		while replica == None: 
+			print "load from chatlog" + " $$$$$$$$$$$$$$$$$$$$$$ grabbed replica lock_cv lock"
+			replica_cv.wait() 
 	try:
 		with open(LOG_PATH_REPLICA, 'rt') as file: 
+			replica.slot_number = int(file.readline())
+			state_line = int(file.readline())
+			for i in range(state_line): 
+				line = file.readline() 
+				key, value = line.split(None, 1)
+				key = int(key)
+				state.data[key] = value[:-1]
 			chatLog_line = int(file.readline())
 			for i in range(chatLog_line): 
 				line = file.readline()
@@ -125,8 +147,14 @@ class Replica(Thread):
 	def run(self):
 		global state, crash 
 		replica_load_from_chatLog()
+		print "####################################loaded from chatlog"
+		print "self.decisions is " + str(self.decisions)
+		print "self.proposals is " + str(self.proposals)
 		while self.connected:
 			if '\n' in self.buffer:
+				with leader_cv: 
+					while leader == None: 
+						leader_cv.wait() 
 				if not self.leader_initialized: 
 					leader.start()
 					self.leader_initialized = True 
@@ -171,6 +199,7 @@ class Replica(Thread):
 						raise ValueError
 					self.buffer += data 
 				except Exception as e:
+					print "################################################ connection to master closed"
 					self.master_conn.close()
 					self.master_conn = None 
 					self.master_conn, self.master_addr = self.socket.accept()
@@ -192,7 +221,7 @@ class Replica(Thread):
 
 
 	def propose(self, p):
-		global leader
+		global leader, replica_cv
 		found = False 
 		for s in self.decisions: 
 			if p == self.decisions[s]:
@@ -207,13 +236,17 @@ class Replica(Thread):
 					break
 			proposal = propose_s, p
 			self.proposals[propose_s] = p
+			with replica_cv: 
+				while replica == None: 
+					print str(self.pid) + "$$$$$$$$$$$$$$$$$$$$$$ grabbed replica lock_cv lock"
+					replica_cv.wait() 
 			leader.add_proposal(proposal)
 
 
 	def perform(self, s, p): 
 		# print "in perform"
 		cid, op = p.split(" ", 1)
-		print "Replica {:d} perform on msg {:d}".format(self.pid, int(cid))
+		print "Replica {:d} perform on msg {:d}".format(self.pid, int(cid)) + " slot_number: " + str(self.slot_number)
 		found = False 
 		for s_prime, p_prime in self.decisions.items(): 
 			if s_prime < self.slot_number and p == p_prime: 
@@ -225,10 +258,11 @@ class Replica(Thread):
 			global state 
 			result = state.op(s, op) 
 			self.slot_number += 1 
-			# if p in self.proposals.values(): 	
-			ack_msg = "ack " + str(cid) + " " + str(result) + "\n"
-			print "Replica {:d} sends ACK back to master: {}".format(self.pid, str(ack_msg))
-			self.master_conn.send("ack " + str(cid) + " " + str(result) + "\n")
+			print "Replica " + str(self.pid) + " state: " + str(state) + " slot_number: " + str(self.slot_number)
+			if p in self.proposals.values(): 	
+				ack_msg = "ack " + str(cid) + " " + str(result) + "\n"
+				print "Replica {:d} sends ACK back to master: {}".format(self.pid, str(ack_msg))
+				self.master_conn.send("ack " + str(cid) + " " + str(result) + "\n")
 
 
 	def kill(self):
@@ -253,7 +287,7 @@ class ServerListener(Thread):
 		self.buffer = ''
 
 	def run(self):
-		global leader, acceptor, replica
+		global leader, acceptor, replica, replica_cv, acceptor_cv, leader_cv, replica_cv
 		self.conn, self.addr = self.sock.accept()
 		# print "Server " + str(self.pid) + " listen to Server " + str(self.target_pid) + " at port " + str(self.port)
 		while True:
@@ -263,31 +297,37 @@ class ServerListener(Thread):
 				cmd, info = l.split(None, 1)
 				# leader receives
 				if cmd == 'p1b':
-					if leader: 
-						leader.process_p1b(self.target_pid, info)
-					else: 
-						self.buffer += (l + "\n")
+					with leader_cv: 
+						while leader == None: 
+							print str(self.pid) + " $$$$$$$$$$$$$$$$$$$$$$ grabbed replica lock_cv lock"
+							leader_cv.wait() 
+					leader.process_p1b(self.target_pid, info)
 				elif cmd == 'p2b':
-					if leader: 
-						leader.process_p2b(self.target_pid, info)
-					else: 
-						self.buffer += (l + "\n")
+					with leader_cv: 
+						while leader == None: 
+							print str(self.pid) + " $$$$$$$$$$$$$$$$$$$$$$ grabbed leader lock_cv lock"
+							leader_cv.wait() 
+					leader.process_p2b(self.target_pid, info)
 				# accpetor recieves
 				elif cmd == 'p1a':
-					if acceptor: 
-						acceptor.process_p1a(self.target_pid, info)
-					else: 
-						self.buffer += (l + "\n")
+					with acceptor_cv: 
+						while acceptor == None: 
+							print str(self.pid) + " $$$$$$$$$$$$$$$$$$$$$$ grabbed acceptor lock_cv lock"
+							acceptor_cv.wait() 
+					acceptor.process_p1a(self.target_pid, info)
 				elif cmd == 'p2a':
-					if acceptor: 
-						acceptor.process_p2a(self.target_pid, info)
-					else: 
-						self.buffer += (l + "\n")
+					with acceptor_cv: 
+						while acceptor == None: 
+							print str(self.pid) + " $$$$$$$$$$$$$$$$$$$$$$ grabbed acceptor lock_cv lock"
+							acceptor_cv.wait() 
+					acceptor.process_p2a(self.target_pid, info)
 				elif cmd == 'decision':
 					# print "Server " + str(self.pid) + " received decision from leader " + str(self.target_pid)
-					if replica: 
-						replica.decide(info)
-					else: self.buffer += (l + "\n")
+					with replica_cv: 
+						while replica == None: 
+							print str(self.pid) + " $$$$$$$$$$$$$$$$$$$$$$ grabbed replica lock_cv lock"
+							replica_cv.wait() 
+					replica.decide(info)
 				elif cmd == 'heartbeat': 
 					pass 
 				else: 
@@ -444,13 +484,28 @@ def main(pid, num_servers, port):
 	replica = Replica(pid, num_servers, port)
 	replica.setDaemon(True)
 	acceptor = Acceptor(pid, num_servers, clients)
-	print "acceptor initialized"
+	print str(pid) + " acceptor initialized"
 	acceptor.setDaemon(True)
 	acceptor.start()
+	# print "before acceptor " + str((acceptor == None))
+	with acceptor_cv: 
+		acceptor_cv.notifyAll()
+		# print str(pid) + " notified acceptor cv"
+	# except: 
+	# 	print sys.exc_info()[0] 
 	leader = Leader(pid, num_servers, clients)
-	print "leader initialized"
 	leader.setDaemon(True)
-	replica.start() 
+	with leader_cv: 
+		leader_cv.notifyAll()
+	# 	print str(pid) + " notified leader cv"
+	# except: 
+	# 	pass 
+	replica.start()
+	with replica_cv: 
+		replica_cv.notifyAll() 
+	# 	print str(pid) + " notified replica cv"
+	# except: 
+	# 	pass 
 
 
 if __name__ == "__main__":
